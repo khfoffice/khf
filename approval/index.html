@@ -1256,7 +1256,7 @@ function linkPanel(){
   const pend=pendingLink(S.me);
   const sel=h('select',{id:'linkSel'},h('option',{value:''},'명단에서 내 이름 고르기'),personOpts(pend));
   return h('section',{class:'panel'},h('h2',{},'내 계정을 직원 명단과 연결해 주세요'),
-    h('p',{class:'muted small',style:'margin-top:-6px'},pend?`${nameK(pend)}(으)로 연결을 요청했어요. Claude 계정 이름과 명단 이름이 달라 관리자가 확인하면 연결돼요.`:'연결해야 결재선에 들어가고 문서를 올릴 수 있어요. Claude 계정 이름과 명단 이름이 같으면 바로 연결되고, 다르면 관리자가 확인한 뒤 연결돼요.'),
+    h('p',{class:'muted small',style:'margin-top:-6px'},pend?`${nameK(pend)}(으)로 연결을 요청했어요. Claude 계정 이름과 명단 이름이 달라 관리자가 확인하면 연결돼요.`:(window.__isM365?`지금 로그인한 계정(${S.me||''})의 메일 주소가 직원 명단의 이메일과 같으면 자동으로 연결돼요. 명단에 이메일이 비었거나 다르게 적혀 있으면 관리자에게 관리 › 직원·연결의 이메일 칸을 고쳐 달라고 하세요. 아래에서 이름을 골라 요청해도 돼요.`:'연결해야 결재선에 들어가고 문서를 올릴 수 있어요. Claude 계정 이름과 명단 이름이 같으면 바로 연결되고, 다르면 관리자가 확인한 뒤 연결돼요.')),
     Object.keys(C().roster).length?h('div',{class:'row'},sel,h('button',{class:'btn sm',disabled:S.readOnly,onclick:async()=>{const v=sel.value;if(!v)return;try{await serial('link',()=>S.db.doc('links/'+S.me).set({...(S.links[S.me]||{}),key:v,at:Date.now()}));}catch(e){writeErr(e);}}},'연결 요청')):h('p',{class:'empty'},'아직 직원 명단이 없어요. 관리자가 관리 탭에서 명단을 넣어야 해요.'));
 }
 
@@ -2193,7 +2193,7 @@ function adminStaff(v){
   let dragFrom=-1;
   v.append(h('section',{class:'panel'},h('div',{class:'row between',style:'margin-bottom:8px'},h('h2',{style:'margin:0'},`직원 명단 (${ks.length}명)`),
       h('div',{class:'row'},h('span',{class:'small muted'},'⠿ 손잡이를 끌어 옮기거나 순번을 고쳐 쓰면 순서가 바뀌어요.'),armBtn('ordReset','팀·직위순으로 다시 정렬','정말 다시 정렬할까요?',()=>writeConfig(c=>{delete c.rosterOrder;}).catch(writeErr)))),
-    ks.length?h('div',{class:'tbl'},h('table',{class:'t roster'},h('tr',{},['순번','이름','직위','국','팀','지점','연결','서명',''].map(t=>h('th',{},t))),
+    ks.length?h('div',{class:'tbl'},h('table',{class:'t roster'},h('tr',{},['순번','이름','직위','국','팀','이메일','지점','연결','서명',''].map(t=>h('th',{},t))),
     ks.map((k,i)=>{const r=R(k),u=uidOfKey(k);const tr=h('tr',{'data-i':i,
         ondragstart:e=>{dragFrom=i;tr.classList.add('dragging');try{e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',String(i));}catch{}},
         ondragend:()=>{tr.classList.remove('dragging');tr.draggable=false;document.querySelectorAll('tr.dropT,tr.dropB').forEach(x=>x.classList.remove('dropT','dropB'));},
@@ -2206,8 +2206,9 @@ function adminStaff(v){
       h('td',{},h('select',{onchange:e=>set(k,'pos',e.target.value)},C().positions.map(p=>h('option',{selected:p.name===r.pos},p.name)))),
       h('td',{},h('input',{value:r.bureau||'',style:'width:110px',onchange:e=>set(k,'bureau',e.target.value.trim())})),
       h('td',{},h('input',{value:r.team||'',style:'width:120px',onchange:e=>set(k,'team',e.target.value.trim())})),
+      h('td',{},h('input',{type:'email',value:r.email||'',placeholder:'name@kohem.org',style:'width:170px',onchange:e=>set(k,'email',e.target.value.trim().toLowerCase())})),
       h('td',{class:'nw small'},branchById(branchOfKey(k)).name),
-      h('td',{class:'small nw'},u?(S.PS[u]?.name?'✓ '+S.PS[u].name:'✓ 연결됨'):h('span',{class:'muted'},'미연결')),
+      h('td',{class:'small nw'},window.__isM365?(!r.email&&!r.uid?h('span',{style:'color:var(--bad)'},'이메일 없음'):u&&S.links[u]?'✓ 접속함':h('span',{class:'muted'},'아직 접속 전')):u?(S.PS[u]?.name?'✓ '+S.PS[u].name:'✓ 연결됨'):h('span',{class:'muted'},'미연결')),
       h('td',{class:'nw'},signOf(k)?signImg(k,'height:26px;max-width:80px;vertical-align:middle;background:#fff'):h('span',{class:'muted small'},'없음'),' ',h('label',{class:'btn ghost sm',style:'cursor:pointer',title:'관리자가 대신 등록 (본인이 등록한 서명이 있으면 그게 먼저 쓰여요)'},signOf(k)?'바꾸기':'올리기',h('input',{type:'file',accept:'image/png,image/jpeg',hidden:true,onchange:async e=>{const f=e.target.files[0];e.target.value='';if(!f)return;const mm=h('div',{});const s=await uploadSign(f,mm);if(!s){notice(mm.textContent);return;}writeConfig(c=>{if(c.roster[k])c.roster[k].sign=s;}).then(()=>alog('권한 변경',null,{x:`${r.name} 서명 등록 (관리자)`})).catch(writeErr);}}))),
       h('td',{class:'nw'},u&&r.uid?h('button',{class:'btn ghost sm',type:'button',onclick:()=>set(k,'uid',null)},'연결 해제'):null,h('button',{class:'btn ghost sm',type:'button',title:'퇴사하면 새 문서에서 빠져요. 지난 문서는 개인정보 보호 탭에서 권한을 회수해요.',onclick:()=>{set(k,'left',!r.left);if(!r.left)notice(`${r.name}님을 퇴사 처리했어요. 관리 › 개인정보 보호에서 지난 문서 권한도 회수해 주세요.`);}},r.left?'퇴사 취소':'퇴사 처리'),armBtn('rm'+k,'빼기','정말 뺄까요?',()=>writeConfig(c=>{delete c.roster[k];if(Array.isArray(c.rosterOrder))c.rosterOrder=c.rosterOrder.filter(x=>x!==k);}).catch(writeErr))));return tr;}))):h('p',{class:'empty'},'아직 명단이 없어요. 위에서 휴가 관리 이관 파일을 불러오세요.')));
   // 직위
