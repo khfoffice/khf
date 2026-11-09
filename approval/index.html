@@ -102,6 +102,7 @@ function(e){return e.hasOwnProperty("authorization_endpoint")&&e.hasOwnProperty(
   const G='https://graph.microsoft.com/v1.0';
   const SITES_SCOPE=A.sitesScope||'Sites.ReadWrite.All';
   const SCOPES=['User.Read','User.ReadBasic.All',SITES_SCOPE,'Mail.Send','Files.ReadWrite'];
+  const SETUP_SCOPES=['Sites.Manage.All'];   // 목록을 처음 만들 때만 필요 (Graph '목록 만들기' 권한)
   // 저장 경로의 첫 마디 → SharePoint 목록
   const LISTS={config:'EA_Config',links:'EA_Links',dec:'EA_Dec',docs:'EA_Docs',nos:'EA_Nos',wk:'EA_Reports',mo:'EA_Reports',alog:'EA_Log',destroy:'EA_Destroy'};
   const LNAMES=[...new Set(Object.values(LISTS))];
@@ -138,7 +139,7 @@ function(e){return e.hasOwnProperty("authorization_endpoint")&&e.hasOwnProperty(
     catch(e){if(e instanceof msal.InteractionRequiredAuthError){await MS.acquireTokenRedirect({scopes,account:ACC});}throw e;}}
   async function gx(method,path,body,opt={},tries=0){
     const isBlob=body instanceof Blob;
-    const res=await fetch(path.startsWith('http')?path:G+path,{method,headers:{Authorization:'Bearer '+await token(),...(body!==undefined&&!isBlob?{'Content-Type':'application/json'}:{}),...(opt.headers||{})},body:body===undefined?undefined:(isBlob?body:JSON.stringify(body))});
+    const res=await fetch(path.startsWith('http')?path:G+path,{method,headers:{Authorization:'Bearer '+await token(opt.scopes),...(body!==undefined&&!isBlob?{'Content-Type':'application/json'}:{}),...(opt.headers||{})},body:body===undefined?undefined:(isBlob?body:JSON.stringify(body))});
     if((res.status===429||res.status===503||res.status===504)&&tries<5){await new Promise(r=>setTimeout(r,(Number(res.headers.get('Retry-After'))||1+tries)*1000));return gx(method,path,body,opt,tries+1);}
     if(!res.ok){let m='';try{m=(await res.json()).error?.message||'';}catch{}const e=new Error(m||('HTTP '+res.status));e.status=res.status;e.code=res.status===403||res.status===401?'forbidden':'graph';throw e;}
     if(res.status===204||res.status===202||method==='DELETE')return null;
@@ -331,13 +332,13 @@ function(e){return e.hasOwnProperty("authorization_endpoint")&&e.hasOwnProperty(
     try{
       const cols=[{name:'Key',text:{},indexed:true,enforceUniqueValues:true},{name:'Coll',text:{},indexed:true},{name:'Data',text:{allowMultipleLines:true,textType:'plain'}},{name:'Stamp',number:{}},{name:'Yr',number:{},indexed:true},{name:'Q',text:{},indexed:true}];
       for(const n of LNAMES){if(LIDS[n])continue;msg.textContent=`목록 만드는 중… (${n})`;
-        const l=await gx('POST',`/sites/${SITE}/lists`,{displayName:n,description:'재단 전자결재 데이터 (직접 고치지 마세요)',columns:cols,list:{template:'genericList'}});LIDS[n]=l.id;}
+        const l=await gx('POST',`/sites/${SITE}/lists`,{displayName:n,description:'재단 전자결재 데이터 (직접 고치지 마세요)',columns:cols,list:{template:'genericList'}},{scopes:SETUP_SCOPES});LIDS[n]=l.id;}
       msg.textContent='첨부 폴더 만드는 중…';
       try{await gx('POST',`/sites/${SITE}/drive/root/children`,{name:FILES,folder:{},'@microsoft.graph.conflictBehavior':'fail'});}catch(e){if(e.status!==409)throw e;}
       const cfg=await getOne('config/main');
       if(!cfg)await put('config/main',{admins:[ME.email]});
       gate('목록을 만들었어요',`<p>SharePoint에 전자결재 목록 ${LNAMES.length}개와 첨부 폴더(${FILES})를 만들었어요. 설치 안내의 <b>"목록 권한 설정"</b>을 마친 뒤 직원들이 쓰기 시작하면 돼요.</p>`,[['프로그램 열기',()=>{hideGate();readyRes();}]]);
-    }catch(e){console.error(e);btn.disabled=false;msg.className='msgline err';msg.textContent=e.status===403?'이 사이트의 소유자 계정으로 진행해 주세요. (목록을 만들 권한이 없어요)':'목록을 만들지 못했어요: '+e.message;}}
+    }catch(e){console.error(e);btn.disabled=false;msg.className='msgline err';msg.innerHTML=e.status===403?'목록을 만들 권한이 없어요. ① 지금 계정이 khf 사이트 <b>소유자</b>인지, ② Entra 앱의 API 사용 권한에 <b>Sites.Manage.All (위임)</b>이 추가되고 <b>관리자 동의</b>가 됐는지 확인해 주세요. (Graph 오류: '+esc(e.message)+')':'목록을 만들지 못했어요: '+esc(e.message);}}
 
   (async()=>{
     if(!A.clientId||!A.tenantId){gate('연결 정보가 필요해요','<p>파일 맨 위 APP_CONFIG를 확인해 주세요.</p>');return;}
