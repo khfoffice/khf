@@ -587,7 +587,7 @@ td.nw{white-space:nowrap;font-variant-numeric:tabular-nums}
 </div>
 <script>
 /* ================= 프로그램 버전 (고칠 때마다 올림) ================= */
-const APP_VER='2026.11.16 (v37)';
+const APP_VER='2026.11.16 (v38)';
 (function(){const put=()=>{const el=document.getElementById('appVer');if(el)el.textContent='버전 '+APP_VER;};put();document.addEventListener('DOMContentLoaded',put);
   // M365 버전: 서버에 새 버전이 올라왔는지 확인 (열 때 + 30분마다)
   const chk=async()=>{if(!window.__isM365)return;try{const r=await fetch(location.pathname+'?v='+Date.now(),{cache:'no-store'});const tx=await r.text();const m=tx.match(/const APP_VER='([^']+)'/);
@@ -766,7 +766,7 @@ const stepLabel=s=>s.coop?'협조':s.dam?'담당':LV[s.level]||'결재';
 
 /* ---------- 서명(위변조 확인용) ---------- */
 const SIGF={etc:['title','body','keep','rule','manualLevel','manualWhy'],gian:['title','body','attach','keep','recipient','sender','team','rule','manualLevel','manualWhy'],buy:['title','items','vat','goods','vendor','vtel','pay','orderDate','dueDate','note','attach'],out:['title','body','attach','to','cc','replyTo','rule','manualLevel','manualWhy'],in:['title','origNo','sender','recvDate','replyNeed','replyDue','manualLevel','round']};
-function sigOf(d){const o={k:d.kind,a:d.author,b:d.branch,s:(d.steps||[]).map(s=>[s.key,s.level||0,!!s.coop,!!s.final]),f:(d.files||[]).map(f=>f.id)};for(const f of (SIGF[d.kind]||[]))o[f]=d[f]??null;for(const f of ['msum','dlist','mark','senderBy','noSeal','openness','via','execDate','dam','round','memo'])if(d[f]!=null)o[f]=d[f];return hash(JSON.stringify(o));}
+function sigOf(d){const o={k:d.kind,a:d.author,b:d.branch,s:(d.steps||[]).map(s=>[s.key,s.level||0,!!s.coop,!!s.final]),f:(d.files||[]).map(f=>f.id)};for(const f of (SIGF[d.kind]||[]))o[f]=d[f]??null;for(const f of ['msum','dlist','mark','senderBy','noSeal','openness','via','execDate','dam','round','memo','otsum'])if(d[f]!=null)o[f]=d[f];return hash(JSON.stringify(o));}
 
 /* ---------- 결재 판정 ---------- */
 function entriesFor(docId){const out=[];for(const [u,doc] of Object.entries(S.dec))for(const [k,e] of Object.entries(doc?.d||{}))if(k.startsWith(docId+':'))out.push({...e,uid:u,slot:k.slice(docId.length+1)});return out;}
@@ -1122,7 +1122,19 @@ function coopRow(d,span=3){const e=ev(d),co=(e.steps||[]).map((s,i)=>({...s,i}))
 function opinions(d){const e=ev(d),out={};(e.steps||[]).forEach((s,i)=>{const x=e.done[i];if(x&&x.note&&!s.coop)out[s.level]=(out[s.level]?out[s.level]+'\n':'')+x.note;});return out;}
 function attachText(d){const a=(d.attach||'').trim();if(a)return a;const f=d.files||[];return f.length?f.map((x,i)=>`${i+1}. ${x.name.replace(/\.[^.]+$/,'')} 1부.`).join('\n')+'  끝.':'';}
 
-function paperEtc(d){
+function paperOtsum(d){const o=d.otsum,rs=o.rows||[];
+  const span=(i,keyf)=>{if(i>0&&keyf(rs[i])===keyf(rs[i-1]))return 0;let n=1;while(i+n<rs.length&&keyf(rs[i+n])===keyf(rs[i]))n++;return n;};
+  const td=(v,a={})=>h('td',{style:'font-size:9pt;padding:1.2mm 1.5mm;white-space:pre-wrap;'+(a.style||''),class:a.cls||'c',...(a.rs>1?{rowspan:a.rs}:{})},v==null?'':String(v));
+  return h('div',{class:'paper'},h('div',{class:'ttl'},'시간외 근무자 현황'),h('div',{style:'text-align:center;margin:-3mm 0 4mm;font-size:10.5pt'},o.period||''),
+    signTable(d),coopRow(d)?h('table',{style:'margin-top:-.3mm'},h('colgroup',{},h('col',{style:'width:18mm'}),h('col',{})),coopRow(d,1)):null,h('div',{style:'height:4mm'}),
+    h('table',{class:'items',style:'table-layout:fixed'},h('colgroup',{},['16mm','24mm','18mm','18mm','25mm',''].map(w=>h('col',w?{style:'width:'+w}:{}))),
+      h('tr',{},['구 분','부 서','직 책','성 명','초과근무시간','비  고'].map(x=>h('th',{},x))),
+      rs.map((r,i)=>{const a=span(i,x=>x.g),b=span(i,x=>x.g+'|'+x.tm);return h('tr',{},a?td(r.g,{rs:a}):null,b?td(r.tm,{rs:b}):null,td(r.pos),td(r.name),td(r.h===''?'':r.h,{cls:'r'}),td(r.note,{cls:'',style:'text-align:left'}));}),
+      h('tr',{},h('th',{colspan:4},'합  계'),h('td',{class:'r',style:'font-weight:700'},String(o.total)),h('td',{class:'c'},`${o.cnt}명`))),
+    d.body?h('p',{style:'white-space:pre-wrap;font-size:10pt;margin:3mm 0 0'},d.body):null,
+    (d.files||[]).length?h('p',{style:'white-space:pre-wrap;font-size:9.5pt;margin:2mm 0 0'},'붙임  '+(d.files||[]).map((f,i)=>`${i+1}. ${f.name.replace(/\.[^.]+$/,'')} 1부.`).join('\n        ')+'  끝.'):null,
+    h('div',{class:'foot'},C().org.name));}
+function paperEtc(d){if(d.otsum)return paperOtsum(d);
   const e=ev(d),op=opinions(d),org=C().org;const rule=d.rule&&d.rule!=='manual'?RULES.find(r=>r.id===d.rule):null;const ops=Object.values(op).filter(Boolean).join('\n');
   return h('div',{class:'paper'},h('div',{class:'ttl'},'결 재 문 서'),
     h('table',{},h('colgroup',{},['20mm','','20mm',''].map(w=>h('col',w?{style:'width:'+w}:{}))),
@@ -1464,7 +1476,8 @@ function editor(){
   }
   if(d.kind==='etc'){
     form.append(fld('보존기간',h('select',{id:'e_keep',onchange:e=>d.keep=e.target.value},KEEP.map(k=>h('option',{value:k,selected:normKeep(d.keep||keepDef('etc'))===k},KEEP_LABEL[k]))),'f'),
-      fld('내용 (선택)',inp('body',{tag:'textarea',rows:5,placeholder:'결재받을 내용을 간단히 적어 주세요. 파일만 올려도 돼요.'}),'f s6'));
+      d.otsum?h('p',{class:'notice small f s6',style:'margin:0'},`시간외 근무자 현황 ${d.otsum.rows.length}명 · 합계 ${d.otsum.total}시간이 결재 문서 본문으로 들어가요. 미리보기로 확인하세요.`):null,
+      fld(d.otsum?'덧붙일 말 (선택)':'내용 (선택)',inp('body',{tag:'textarea',rows:d.otsum?3:5,placeholder:'결재받을 내용을 간단히 적어 주세요. 파일만 올려도 돼요.'}),'f s6'));
     form.append(rulePicker(d,refreshSteps));
   }
   if(d.kind==='buy'){
@@ -2076,7 +2089,7 @@ const AGG={
   subsidy:{basis:'done',sum:d=>[`${String(d.stype||'').split(',')[0]} · ${d.content||''}${d.usePlace?' ('+d.usePlace+')':''}`,Number(d.amount)||0]},
   repair:{basis:'done',sum:d=>[(d.rows||[]).map(x=>x.name).filter(Boolean).join(', ')+(d.vendor?' / '+d.vendor:''),sumBy(d.rows,x=>x.cost)]}};
 const aggName=k=>(KINDS[k]?.label||k).replace(/\s*(지급)?신청서$/,'');
-function msumIncluded(id){return Object.values(S.docs).find(g=>g.kind==='gian'&&!g.deleted&&g.msum&&(g.msum.src||[]).includes(id)&&!['rejected','withdrawn'].includes(ev(g).status))||null;}
+function msumIncluded(id){return Object.values(S.docs).find(g=>(g.kind==='gian'||g.kind==='etc')&&!g.deleted&&(g.msum||g.otsum)&&((g.msum||g.otsum).src||[]).includes(id)&&!['rejected','withdrawn'].includes(ev(g).status))||null;}
 function msumTable(m,ui){const hrs=!!m.hours,ai=4;const num=(v,i)=>i===ai?(hrs?String(v):won(v)):String(v??'');
   const cell=(v,i,th)=>h(th?'th':'td',{class:ui?(i===ai?'num':''):(i===ai?'r':i===0||i===5?'c':''),style:ui?'':'font-size:8.5pt;white-space:normal'},th?v:num(v,i));
   return h('table',{class:ui?'t':'items',style:ui?'':'margin:3mm 0 2mm;table-layout:auto'},h('tr',{},m.head.map((x,i)=>cell(x,i,true))),m.rows.map(r=>h('tr',{},r.map((x,i)=>cell(x,i)))),
@@ -2099,14 +2112,15 @@ function adminAgg(v){
   const fmt=x=>cfg.hours?`${x}시간`:won(x)+'원';
   const [y,mm]=A.ym.split('-');
   const am=h('div',{class:'msg'});
-  const make=async ev0=>{const btn=ev0&&ev0.target;if(btn)btn.disabled=true;const d=blankDoc('gian');const n=sel.length,ppl=new Set(sel.map(x=>x.author)).size;
-    // 개인별 신청서를 PDF(영수증 등 첨부 포함)로 만들어 기안 첨부파일로 붙인다
-    try{const files=[];for(const [i,x] of sel.entries()){am.textContent=`개인별 신청서 PDF 만드는 중… ${i+1}/${n} (${nameK(x.author)})`;am.className='msg';
+  // 개인별 신청서를 PDF(영수증 등 첨부 포함)로 만들어 첨부파일로 올린다
+  const srcFiles=async(sel,pre)=>{const files=[...pre];const n=sel.length;
+    try{for(const [i,x] of sel.entries()){am.textContent=`개인별 신청서 PDF 만드는 중… ${i+1}/${n} (${nameK(x.author)})`;am.className='msg';
         let b=await pdfOffscreen(paperOf(x));if((x.files||[]).length){try{b=(await mergeWithAttachments(b,x.files)).blob;}catch(er){console.warn(er);}}
         files.push(new File([b],safeName(`${String(i+1).padStart(2,'0')}_${nameK(x.author)}_${aggName(x.kind)}_${(ev(x).at?ymd(new Date(ev(x).at)):'')}`)+'.pdf',{type:'application/pdf'}));}
-      d.files=await uploadFiles(files,am);if(d.files.length<files.length){am.textContent=`첨부 ${files.length-d.files.length}개를 올리지 못했어요. 기안에서 직접 더해 주세요.`;am.className='msg err';}else am.textContent='';}
-    catch(er){console.error(er);am.textContent='개인별 신청서 첨부를 만들지 못했어요. 기안에서 직접 첨부해 주세요.';am.className='msg err';d.files=d.files||[];}
-    finally{if(btn)btn.disabled=false;}
+      const up=await uploadFiles(files,am);if(up.length<files.length){am.textContent=`첨부 ${files.length-up.length}개를 올리지 못했어요. 문서에서 직접 더해 주세요.`;am.className='msg err';}else am.textContent='';return up;}
+    catch(er){console.error(er);am.textContent='개인별 신청서 첨부를 만들지 못했어요. 문서에서 직접 첨부해 주세요.';am.className='msg err';return [];}};
+  const make=async ev0=>{const btn=ev0&&ev0.target;if(btn)btn.disabled=true;const d=blankDoc('gian');const n=sel.length,ppl=new Set(sel.map(x=>x.author)).size;
+    try{d.files=await srcFiles(sel,[]);}catch(er){console.error(er);d.files=[];}finally{if(btn)btn.disabled=false;}
     d.title=`${y}년 ${+mm}월 ${lab} 지급 결의 (${n}건)`;
     d.body=`1. 관련: ${lab} 신청서 ${n}건 (결재일 ${[...new Set(sel.map(dayOf))].filter(Boolean).join(', ')}, 개인별 신청서 붙임)\n2. ${y}년 ${+mm}월 ${lab}을(를) 아래와 같이 지급하고자 합니다.\n\n  가. 대상: ${ppl}명 ${n}건\n  나. ${cfg.hours?'시간 합계':'지급 합계'}: ${fmt(total)}${cfg.hours?' (금액은 급여 기준으로 산정)':''}\n\n아      래`;
     d.msum={kind:A.kind,ym:A.ym,head,rows:sel.map(rowOf),total,hours:!!cfg.hours,src:sel.map(x=>x.id)};
@@ -2120,11 +2134,20 @@ function adminAgg(v){
     ppl.sort((a,b)=>gO.indexOf(grp(a))-gO.indexOf(grp(b))||tO.indexOf(grp(a)+'|'+(R(a)?.team||'-'))-tO.indexOf(grp(b)+'|'+(R(b)?.team||'-'))||ordIdx(a)-ordIdx(b));
     return ppl.map(k=>{const o=by.get(k);return {g:grp(k),tm:R(k)?.team||'-',pos:R(k)?.pos||'',name:nameK(k),h:o?Math.round(o.h*10)/10:'',note:o?o.notes.join('\n'):''};});};
   const otPeriod=()=>{const [a,b]=prevMonthPeriod(A.ym).split(' ~ ');const f=s=>{const [yy,m2,dd]=s.split('-').map(Number);return `${yy}. ${m2}. ${dd}`;};return `(기간 : ${f(a)} ~ ${f(b)})`;};
-  const otXlsx=()=>{const rs=otRows(),hr=3,merges=[];const body=rs.map(r=>[r.g,r.tm,r.pos,r.name,r.h,r.note]);
+  const otSheet=()=>{const rs=otRows(),hr=3,merges=[];const body=rs.map(r=>[r.g,r.tm,r.pos,r.name,r.h,r.note]);
     const mg=(col,keyf)=>{let s=0;for(let i=1;i<=rs.length;i++){if(i===rs.length||keyf(rs[i])!==keyf(rs[s])){if(i-1>s)merges.push({s:{r:hr+1+s,c:col},e:{r:hr+i,c:col}});s=i;}}};
     mg(0,r=>r.g);mg(1,r=>r.g+'|'+r.tm);const tr=hr+1+rs.length;merges.push({s:{r:tr,c:0},e:{r:tr,c:3}});
     const cnt=rs.filter(r=>r.h!=='').length,tot=Math.round(sumBy(rs,r=>Number(r.h)||0)*10)/10;
-    return xlsxSave(`시간외근무자현황_${y}년_${+mm}월.xlsx`,[{name:`${String(y).slice(2)}.${+mm}월`,rows:[['시간외 근무자 현황'],[otPeriod()],[],['구 분','부 서','직 책','성 명','초과근무시간','비  고'],...body,['합  계','','','',tot,`${cnt}명`]],merges,cols:[11,14,11,11,14,30],noFilter:true}]);};
+    return [{name:`${String(y).slice(2)}.${+mm}월`,rows:[['시간외 근무자 현황'],[otPeriod()],[],['구 분','부 서','직 책','성 명','초과근무시간','비  고'],...body,['합  계','','','',tot,`${cnt}명`]],merges,cols:[11,14,11,11,14,30],noFilter:true}];};
+  const otName=`시간외근무자현황_${y}년_${+mm}월.xlsx`;
+  const otXlsx=()=>xlsxSave(otName,otSheet());
+  // 시간외 근무자 현황을 그대로 결재 문서 본문으로 만들고, 현황 엑셀과 개인별 신청서를 첨부해 전자결재에 올린다
+  const makeOt=async ev0=>{const btn=ev0&&ev0.target;if(btn)btn.disabled=true;
+    try{const rs=otRows(),d=blankDoc('etc');const xl=new File([await xlsxBuild(otSheet())],otName,{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+      d.title=`${y}년 ${+mm}월 시간외 근무자 현황`;d.body='';
+      d.otsum={ym:A.ym,period:otPeriod(),rows:rs,total:Math.round(sumBy(rs,r=>Number(r.h)||0)*10)/10,cnt:rs.filter(r=>r.h!=='').length,src:sel.map(x=>x.id)};
+      d.files=await srcFiles(sel,[xl]);const r=RULES.find(x=>x.t==='지출(지급)');d.rule=r?r.id:'';go('new',{edit:{d}});}
+    catch(er){console.error(er);am.textContent='현황 결재 문서를 만들지 못했어요.';am.className='msg err';}finally{if(btn)btn.disabled=false;}};
   v.append(h('section',{class:'panel'},h('h2',{},'신청서 집계'),
     h('p',{class:'muted small',style:'margin-top:-6px'},'결재가 끝난 신청서를 종류별·월별로 모아 합계를 내고, 그 목록으로 지급 결의 기안을 만들어 따로 결재받아요(개인별 신청서는 PDF로 기안에 첨부돼요). 신청서는 문서번호 없이 결재일로 관리해요. 수당·시간외는 신청서의 "신청 월(지급 월)", 그 밖의 신청서는 결재가 끝난 달로 모아요. 이미 다른 지급 결의에 들어간 신청서는 처음에 빠져 있어요.'),
     h('div',{class:'row',style:'margin-bottom:10px'},
@@ -2132,14 +2155,14 @@ function adminAgg(v){
       h('input',{type:'month','aria-label':'월',value:A.ym,onchange:e=>{A.ym=e.target.value||A.ym;A.pick=null;render(true);}}),
       cfg.hours?h('label',{class:'row small',style:'gap:6px'},h('input',{type:'checkbox',checked:A.otAll!==false,onchange:e=>{A.otAll=e.target.checked;}}),'신청 없는 직원도 현황표에 넣기'):null),
     list.length?h('div',{class:'tbl'},h('table',{class:'t'},
-      h('tr',{},h('th',{},h('input',{type:'checkbox','aria-label':'모두 고르기',checked:list.length>0&&list.every(d=>A.pick.has(d.id)),onchange:e=>{for(const d of list)e.target.checked?A.pick.add(d.id):A.pick.delete(d.id);render(true);}})),...['성명','소속','내용',cfg.hours?'시간':'금액','결재일',...(cfg.hours?[]:['계좌번호','지급 결의'])].map(t=>h('th',{},t))),
+      h('tr',{},h('th',{},h('input',{type:'checkbox','aria-label':'모두 고르기',checked:list.length>0&&list.every(d=>A.pick.has(d.id)),onchange:e=>{for(const d of list)e.target.checked?A.pick.add(d.id):A.pick.delete(d.id);render(true);}})),...['성명','소속','내용',cfg.hours?'시간':'금액','결재일',...(cfg.hours?['현황 결재']:['계좌번호','지급 결의'])].map(t=>h('th',{},t))),
       list.map(d=>{const [c,amt]=cfg.sum(d),g=msumIncluded(d.id);return h('tr',{},h('td',{},h('input',{type:'checkbox',checked:A.pick.has(d.id),onchange:e=>{e.target.checked?A.pick.add(d.id):A.pick.delete(d.id);render(true);}})),
         h('td',{class:'nw'},nameK(d.author)),h('td',{class:'small'},R(d.author)?.team||''),h('td',{class:'small'},c),h('td',{class:'num'},fmt(amt)),
         h('td',{class:'nw small'},h('a',{href:'#doc-'+d.id,onclick:e=>{e.preventDefault();go('admin',{open:d.id});}},dayOf(d)||'보기')),
-        ...(cfg.hours?[]:[h('td',{class:'small nw'},d.account||''),h('td',{class:'small'},g?h('a',{href:'#doc-'+g.id,onclick:e=>{e.preventDefault();go('admin',{open:g.id});}},`${noText(g)||'작성 중'} ${STATUS[ev(g).status]||''}`):h('span',{class:'muted'},'아직 없음'))]));}),
-      h('tr',{},h('td',{}),h('td',{colspan:3,style:'font-weight:600'},`고른 ${sel.length}건 합계`),h('td',{class:'num',style:'font-weight:700'},fmt(total)),h('td',{colspan:cfg.hours?1:3})))):h('p',{class:'empty'},`${y}년 ${+mm}월에 결재가 끝난 ${KINDS[A.kind]?.label||''}이 없어요.`),
-    h('div',{class:'row between',style:'margin-top:12px'},cfg.hours?h('span',{class:'small muted'},'시간외근무는 지급 결의 기안 없이 "시간외 근무자 현황" 엑셀만 만들어요. 급여 기안 등에 첨부해 주세요.'):am,
-      cfg.hours?h('div',{class:'row'},h('button',{class:'btn',type:'button',disabled:!sel.length&&A.otAll===false,onclick:()=>otXlsx()},`시간외 근무자 현황 엑셀 (${sel.length}건)`)):
+        ...(cfg.hours?[h('td',{class:'small'},g?h('a',{href:'#doc-'+g.id,onclick:e=>{e.preventDefault();go('admin',{open:g.id});}},STATUS[ev(g).status]||''):h('span',{class:'muted'},'아직 없음'))]:[h('td',{class:'small nw'},d.account||''),h('td',{class:'small'},g?h('a',{href:'#doc-'+g.id,onclick:e=>{e.preventDefault();go('admin',{open:g.id});}},`${noText(g)||'작성 중'} ${STATUS[ev(g).status]||''}`):h('span',{class:'muted'},'아직 없음'))]));}),
+      h('tr',{},h('td',{}),h('td',{colspan:3,style:'font-weight:600'},`고른 ${sel.length}건 합계`),h('td',{class:'num',style:'font-weight:700'},fmt(total)),h('td',{colspan:cfg.hours?2:3})))):h('p',{class:'empty'},`${y}년 ${+mm}월에 결재가 끝난 ${KINDS[A.kind]?.label||''}이 없어요.`),
+    h('div',{class:'row between',style:'margin-top:12px'},cfg.hours?h('div',{},h('div',{class:'small muted'},'시간외근무는 기안 대신 "시간외 근무자 현황" 표를 그대로 결재 문서로 올려요(문서번호 없음). 현황 엑셀과 개인별 신청서가 첨부돼요.'),am):am,
+      cfg.hours?h('div',{class:'row'},h('button',{class:'btn ghost sm',type:'button',onclick:()=>otXlsx()},'현황 엑셀 내려받기'),h('button',{class:'btn',type:'button',disabled:!sel.length||S.readOnly||!myKey(),onclick:makeOt},`현황 전자결재 올리기 (${sel.length}건, 개인별 신청서 첨부)`)):
       h('div',{class:'row'},list.length?h('button',{class:'btn ghost sm',type:'button',onclick:exportX},'엑셀 내려받기'):null,
         h('button',{class:'btn',type:'button',disabled:!sel.length||S.readOnly||!myKey(),onclick:make},`지급 결의 기안 만들기 (${sel.length}건, 개인별 신청서 첨부)`)))));
 }
