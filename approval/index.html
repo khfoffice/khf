@@ -587,7 +587,7 @@ td.nw{white-space:nowrap;font-variant-numeric:tabular-nums}
 </div>
 <script>
 /* ================= 프로그램 버전 (고칠 때마다 올림) ================= */
-const APP_VER='2026.11.16 (v39)';
+const APP_VER='2026.11.16 (v40)';
 (function(){const put=()=>{const el=document.getElementById('appVer');if(el)el.textContent='버전 '+APP_VER;};put();document.addEventListener('DOMContentLoaded',put);
   // M365 버전: 서버에 새 버전이 올라왔는지 확인 (열 때 + 30분마다)
   const chk=async()=>{if(!window.__isM365)return;try{const r=await fetch(location.pathname+'?v='+Date.now(),{cache:'no-store'});const tx=await r.text();const m=tx.match(/const APP_VER='([^']+)'/);
@@ -2437,7 +2437,7 @@ function rowsEditor(d,key,cols,onchange){
       if(c.calc){const td=h('td',{class:'amt'},c.calc(x));calcs.push([td,c]);tr.append(td);continue;}
       if(c.render){const td=h('td',{});const re=()=>td.replaceChildren(c.render(x,tr,upd));tr._re.push(re);re();tr.append(td);continue;}
       if(c.opts){tr.append(h('td',{},h('select',{'data-f':c.f,'aria-label':c.t,onchange:e=>{x[c.f]=e.target.value;c.on&&c.on(x,tr);upd();}},c.opts.map(o=>h('option',{selected:x[c.f]===o},o)))));continue;}
-      tr.append(h('td',{},h(c.area?'textarea':'input',{'data-f':c.f,'aria-label':c.t,type:c.type||'text',rows:c.area?2:null,value:x[c.f]??'',placeholder:c.ph||'',style:c.w?`width:${c.w}px`:'',oninput:e=>{x[c.f]=e.target.value;c.on&&c.on(x,tr,e);upd();}})));}
+      tr.append(h('td',{},h(c.area?'textarea':'input',{'data-f':c.f,'aria-label':c.t,type:c.type||'text',rows:c.area?2:null,list:c.list||null,value:x[c.f]??'',placeholder:c.ph||'',style:c.w?`width:${c.w}px`:'',oninput:e=>{x[c.f]=e.target.value;c.on&&c.on(x,tr,e);upd();}})));}
     tr.append(h('td',{},h('button',{type:'button',class:'btn ghost sm','aria-label':'줄 삭제',onclick:()=>{d[key].splice(i,1);if(!d[key].length)d[key].push({});draw();onchange();}},'×')));return tr;}));};
   draw();
   return h('div',{class:'f s6'},h('div',{class:'tbl'},h('table',{class:'t items'},h('thead',{},h('tr',{},h('th',{},'NO'),cols.map(c=>h('th',{},c.t)),h('th',{}))),tb)),
@@ -2519,12 +2519,12 @@ const FORMS={
     check:d=>!(d.rows||[]).some(x=>Number(x.amount)>0)?'지출 내용과 금액을 넣어 주세요.':(d.rows||[]).length>10?'지출 항목은 10줄까지 넣을 수 있어요.':null,
     edit(d,form,{refreshSteps}){const tot=h('b',{class:'total'});const upd=()=>{tot.textContent=won(sumBy(d.rows,x=>x.amount))+'원';refreshSteps();};
       form.append(h('datalist',{id:'expCats'},['지급수수료','통신비','임차료','소모품비','수선비','도서인쇄비','여비교통비','업무추진비','차량유지비','보험료','광고선전비','교육훈련비'].map(x=>h('option',{value:x}))),
-        rowsEditor(d,'rows',[{f:'cat',t:'구분 (계정)',ph:'예: 지급수수료',w:130,def:''},{f:'content',t:'내용',ph:'예: Giga_Metro 100M 사용료'},{f:'amount',t:'금액(원)',type:'number',w:130}],upd),
+        rowsEditor(d,'rows',[{f:'cat',t:'구분 (계정)',ph:'예: 지급수수료',w:130,def:'',list:'expCats'},{f:'content',t:'내용',ph:'예: Giga_Metro 100M 사용료'},{f:'amount',t:'금액(원)',type:'number',w:130}],upd),
         h('div',{class:'f s6',style:'align-items:flex-end'},h('span',{},'소계 ',tot)),
         textIn(d,'account','지급계좌 (은행·계좌번호·예금주)','f s6','예: 국민은행) 519701-01-220702  ㈜하이라인닷넷'),
         areaIn(d,'memo','비고 (선택)','f s6','',2),
         h('p',{class:'muted small f s6',style:'margin:0'},'위 "지점"에서 재단·서울의원·광주의원·부산의원 중 어느 기관 지출인지 골라 주세요. 기관마다 따로 작성해요. 세금계산서는 첨부파일로 올려 주세요.'));
-      setTimeout(()=>{for(const i of form.querySelectorAll('[data-f=cat]'))i.setAttribute('list','expCats');upd();});},
+      setTimeout(upd);},
     paper:d=>{const rows=(d.rows||[]).filter(x=>x.cat||x.content||Number(x.amount));return formPaper(d,'지 출 결 의 서',[
       kvTable([['소    속',branchById(d.branch).name],['신 청 자',`${R(d.author)?.team?R(d.author).team+' ':''}${nameK(d.author)}`],['제 출 일',dot(d.draftDate||'')]],24),
       h('table',{class:'items',style:'margin-top:3mm'},h('colgroup',{},['30mm','','34mm'].map(w=>h('col',w?{style:'width:'+w}:{}))),
