@@ -651,7 +651,7 @@ td.nw{white-space:nowrap;font-variant-numeric:tabular-nums}
 </div>
 <script>
 /* ================= 프로그램 버전 (고칠 때마다 올림) ================= */
-const APP_VER='2026.11.17 (v50)';
+const APP_VER='2026.11.17 (v51)';
 (function(){const put=()=>{const el=document.getElementById('appVer');if(el)el.textContent='버전 '+APP_VER;};put();document.addEventListener('DOMContentLoaded',put);
   // M365 버전: 서버에 새 버전이 올라왔는지 확인 (열 때 + 30분마다)
   // 새 버전이 올라와 있으면 '업데이트 중' 화면을 보여 주고 자동으로 새 버전을 연다 (작성 중인 글이 있으면 끝날 때까지 기다림)
@@ -1783,7 +1783,8 @@ function viewIn(v){
       list.map(d=>h('tr',{class:'click',onclick:()=>go('in',{open:d.id})},h('td',{class:'nw'},noText(d)),h('td',{},d.title),h('td',{class:'small'},d.origNo||''),h('td',{class:'num'},(d.files||[]).length||d.fileCount||''),h('td',{class:'nw'},d.recvDate||''),h('td',{},d.sender||''),h('td',{class:'small'},d.replyNeed?(replyNoOf(d)||'요청'):''),h('td',{class:'nw'},d.assignee?nameK(d.assignee):''),h('td',{},badge(ev(d).status,ev(d))))))):h('p',{class:'empty'},'이 지점·연도에 접수한 공문이 없어요.')));
 }
 function byNoDesc(a,b){const x=a.no||{n:0},y=b.no||{n:0};return (y.n-x.n)||((y.sub||0)-(x.sub||0));}
-function yearSel(id,cur,onch){const ys=new Set([new Date().getFullYear(),Number(cur)]);for(const d of Object.values(S.docs))if(d.yr)ys.add(Number(d.yr));return h('select',{id,onchange:e=>onch(Number(e.target.value))},[...ys].sort((a,b)=>b-a).map(y=>h('option',{value:y,selected:Number(cur)===y},y+'년')));}
+// 연도 목록: 불러오지 않은 지난 연도도 고를 수 있게 (대장에 넣은 가장 옛 연도까지, 적어도 10년)
+function yearSel(id,cur,onch){const Y=new Date().getFullYear(),from=Math.min(Number(C().ledgerFrom)||Y,Y-10);const ys=new Set([Y,Number(cur)]);for(let y=Y;y>=from;y--)ys.add(y);for(const d of Object.values(S.docs))if(d.yr)ys.add(Number(d.yr));return h('select',{id,onchange:e=>onch(Number(e.target.value))},[...ys].sort((a,b)=>b-a).map(y=>h('option',{value:y,selected:Number(cur)===y},y+'년')));}
 
 /* ---------- 주간업무보고 ---------- */
 let wkUnsub=null;
@@ -2265,6 +2266,7 @@ function importDialog(kind,yr){
       if(usedNos(kind,branch,p.no.yr).has(`${p.no.n}-${p.no.sub}`)){skip++;continue;}
       const d={id:uid36(),kind,imported:true,branch,yr:p.no.yr,no:{n:p.no.n,sub:p.no.sub},title:p.title,origNo:p.origNo,fileCount:p.fileCount,recvDate:kind==='in'?p.date:'',date:p.date,draftDate:kind==='in'?'':p.date,sender:p.sender,to:p.to,replyNeed:p.replyNeed,replyNo:p.replyNo,authorName:p.authorName,amount:p.amount,vendor:p.vendor,team:p.team,state:'done',createdAt:Date.now(),files:[],...(p.note?(kind==='in'?{memo:p.note}:{body:p.note}):{})};
       try{await writeDoc(d,true);await noSlot(d,d.no);ok++;m.textContent=`${ok}건 저장 중…`;}catch(e){writeErr(e,m);break;}}
+    {const mn=Math.min(...parsed.map(p=>p.no.yr).filter(Boolean));if(mn&&mn<(Number(C().ledgerFrom)||9999))writeConfig(c=>{c.ledgerFrom=mn;}).catch(()=>{});}
     m.textContent=`${ok}건을 불러왔어요${skip?`, 번호가 겹친 ${skip}건은 건너뛰었어요`:''}.`;m.className='msg good';}finally{S.bulk=false;render(true);}};
   body.append(h('p',{class:'small muted',style:'margin-top:0'},'기존 프로그램에서 엑셀로 내보낸 목록을 고르세요(지점별 파일 여러 개를 한 번에 골라도 돼요. 예전 문서관리 프로그램의 .xls도 그대로 읽어요). 첫 줄의 열 이름(문서번호, 지점, 제목, 문서번호, 파일건수, 접수일자, 발송처, 회신요청, 답신공문번호 …)을 보고 자동으로 맞춰요. 번호는 2026-001-00, 26-001, 제26-001호 모두 읽어요.'),
     h('div',{class:'row'},h('label',{class:'btn ghost sm',style:'cursor:pointer'},'파일 고르기 (xlsx·xls·csv, 여러 개 가능)',h('input',{type:'file',multiple:true,accept:'.xlsx,.xls,.csv,.txt',hidden:true,onchange:async e=>{const fs=[...e.target.files];e.target.value='';if(!fs.length)return;parsed=[];for(const [i,f] of fs.entries()){try{handle(await readSheet(f),i>0);}catch(er){console.error(er);m.textContent=`${f.name}을(를) 읽지 못했어요.`;m.className='msg err';return;}}if(fs.length>1)m.textContent=`파일 ${fs.length}개에서 `+m.textContent;}})),h('span',{class:'small'},'지점 칸이 없으면'),defBr,h('span',{class:'small'},'"본원"은'),bwSel),
