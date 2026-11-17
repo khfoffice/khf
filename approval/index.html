@@ -603,7 +603,7 @@ td.nw{white-space:nowrap;font-variant-numeric:tabular-nums}
 </div>
 <script>
 /* ================= 프로그램 버전 (고칠 때마다 올림) ================= */
-const APP_VER='2026.11.17 (v46)';
+const APP_VER='2026.11.17 (v47)';
 (function(){const put=()=>{const el=document.getElementById('appVer');if(el)el.textContent='버전 '+APP_VER;};put();document.addEventListener('DOMContentLoaded',put);
   // M365 버전: 서버에 새 버전이 올라왔는지 확인 (열 때 + 30분마다)
   // 새 버전이 올라와 있으면 '업데이트 중' 화면을 보여 주고 자동으로 새 버전을 연다 (작성 중인 글이 있으면 끝날 때까지 기다림)
@@ -1027,7 +1027,17 @@ function openFile(f){alog('첨부 열람',curDoc(),{f:f.name});let url=null;cons
   else body.replaceChildren(h('p',{class:'muted'},'미리보기를 지원하지 않는 파일이에요. 내려받아 확인해 주세요.'));}
 const isPdf=f=>/pdf/.test(f.type||'')||/\.pdf$/i.test(f.name||'');
 const isHwp=f=>/\.(hwp|hwpx)$/i.test(f.name||'');
-async function blobOf(f){if(blobCache.has(f.id))return blobCache.get(f.id);
+// 첨부 받기: 같은 파일은 한 번만 받고, 실패하면 두 번 더 시도
+const blobPending=new Map();
+function blobOf(f){if(blobCache.has(f.id))return Promise.resolve(blobCache.get(f.id));if(blobPending.has(f.id))return blobPending.get(f.id);
+  const p=(async()=>{let er;for(let i=0;i<3;i++){try{return await blobOnce(f);}catch(e){er=e;await new Promise(r=>setTimeout(r,700*(i+1)*(i+1)));}}throw er;})().finally(()=>blobPending.delete(f.id));
+  blobPending.set(f.id,p);return p;}
+// 화면에 보이는 것부터 2개씩 차례로 받는다 (한꺼번에 받다가 실패하는 것 방지)
+const viewQ={run:0,list:[]};function viewQueue(job){return new Promise((ok,no)=>{viewQ.list.push({job,ok,no});viewPump();});}
+function viewPump(){while(viewQ.run<2&&viewQ.list.length){const x=viewQ.list.shift();viewQ.run++;x.job().then(x.ok,x.no).finally(()=>{viewQ.run--;viewPump();});}}
+const viewIO='IntersectionObserver' in window?new IntersectionObserver(es=>{for(const e of es)if(e.isIntersecting){viewIO.unobserve(e.target);const go=e.target._load;e.target._load=null;if(go)go();}},{rootMargin:'800px 0px'}):null;
+function whenVisible(el,go){if(viewIO){el._load=go;viewIO.observe(el);}else go();}
+async function blobOnce(f){
   const r=await fetch('/_blob/'+f.id,{credentials:'include'});if(!r.ok)throw new Error(String(r.status));let b;
   if(f.enc){const key=await crypto.subtle.importKey('raw',unb64(f.enc.k),{name:'AES-GCM'},false,['decrypt']);const pt=await crypto.subtle.decrypt({name:'AES-GCM',iv:unb64(f.enc.iv)},key,unb64((await r.text()).trim()));b=new Blob([pt],{type:f.type||guessType(f.name)});}
   else b=await r.blob();
@@ -1052,10 +1062,13 @@ function teamPersonPicker(id,cur,onch,opts={}){
 function attachView(files,title){const fs=files||[];if(!fs.length)return null;
   const box=h('div',{class:'attach-view'},h('h3',{style:'margin:0 0 8px'},title?`${title} ${fs.length}쪽`:`첨부파일 ${fs.length}개`));
   for(const f of fs){const card=h('div',{class:'att-card'},h('div',{class:'row between',style:'margin-bottom:6px'},h('b',{class:'small',style:'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:70%'},f.name),h('button',{type:'button',class:'btn ghost sm',onclick:()=>openFile(f)},'크게 보기')));
-    if((f.type||'').startsWith('image/')){const img=h('img',{alt:f.name,style:'max-width:100%;display:block;margin:0 auto;background:#fff'});img.onerror=()=>img.replaceWith(h('p',{class:'muted small'},'이미지를 불러오지 못했어요. 크게 보기를 눌러 보세요.'));card.append(img);blobOf(f).then(b=>{img.src=URL.createObjectURL(b);}).catch(()=>img.onerror());}
-    else if(/pdf/.test(f.type||'')||/\.pdf$/i.test(f.name)){const ph=h('p',{class:'muted small'},'PDF 불러오는 중…');card.append(ph);
-      const pages=h('div',{});card.append(pages);
-      blobOf(f).then(b=>renderPdf(b,pages).then(()=>ph.remove())).catch(er=>{console.error(er);ph.textContent='PDF를 화면에 그리지 못했어요. 크게 보기에서 내려받아 확인해 주세요.';});}
+    const isImg=(f.type||guessType(f.name)||'').startsWith('image/'),isPdf=/pdf/.test(f.type||'')||/\.pdf$/i.test(f.name);
+    if(isImg||isPdf){const slot=h('div',{style:'min-height:120px'},h('p',{class:'muted small'},'불러오는 중…'));card.append(slot);
+      const load=()=>viewQueue(async()=>{try{const b=await blobOf(f);
+          if(isImg){const img=h('img',{alt:f.name,style:'max-width:100%;display:block;margin:0 auto;background:#fff'});await new Promise((ok,no)=>{img.onload=ok;img.onerror=no;img.src=URL.createObjectURL(b);});slot.replaceChildren(img);slot.style.minHeight='';}
+          else{const pages=h('div',{});slot.replaceChildren(pages);await renderPdf(b,pages);slot.style.minHeight='';}}
+        catch(er){console.warn('첨부 미리보기',f.name,er);slot.replaceChildren(h('p',{class:'muted small row',style:'gap:8px;align-items:center'},isImg?'이미지를 불러오지 못했어요.':'PDF를 화면에 그리지 못했어요.',h('button',{type:'button',class:'btn ghost sm',onclick:()=>{slot.replaceChildren(h('p',{class:'muted small'},'다시 불러오는 중…'));load();}},'다시 시도')));}});
+      whenVisible(slot,load);}
     else if(isHwp(f))card.append(hwpNote());
     else card.append(h('p',{class:'muted small',style:'margin:0'},'미리보기를 지원하지 않는 파일이에요. 크게 보기에서 내려받아 확인해 주세요.'));
     box.append(card);}
@@ -1583,7 +1596,7 @@ function lockedView(d){const L=[['문서번호',noText(d)],['지점',branchById(
     h('p',{class:'notice small',style:'margin-top:12px'},'이관 문서는 담당자와 관리자, 관리자가 지정한 사람만 내용을 볼 수 있어요. 필요하면 관리자에게 열람 지정을 요청해 주세요.'));}
 function docView(d){if(d._locked)return lockedView(d);if(d._lazy){fullDoc(d.id).then(()=>render(true));return h('section',{class:'panel'},h('p',{class:'muted'},'문서를 여는 중…'));}alogView(d);
   const e=ev(d),k=myKey(),isAuthor=d.authorUid===S.me||(k&&d.author===k);
-  const paper=paperOf(d);const pw=h('div',{class:'paper-wrap'},paper,scanView(d),attachView((d.files||[]).filter(f=>f.scan),'스캔본'),attachView((d.files||[]).filter(f=>!f.scan)));
+  const paper=paperOf(d);const pw=h('div',{class:'paper-wrap'},paper,scanView(d),attachView((d.files||[]).filter(isScanF),'스캔본'),attachView((d.files||[]).filter(f=>!isScanF(f))));
   const side=h('div',{class:'side'});
   if((d.kind==='out'||d.kind==='in')&&(S.isAdmin||isAuthor)&&!d.imported)setTimeout(()=>side.append(h('section',{class:'panel'},h('h3',{style:'margin:0 0 6px'},'보존기간'),
     h('select',{disabled:S.readOnly,'aria-label':'보존기간',onchange:async e=>{try{await patchDoc(d.id,{keep:e.target.value});notice('보존기간을 바꿨어요.');setTimeout(()=>notice(''),2500);}catch(er){writeErr(er);}}},KEEP.map(x=>h('option',{value:x,selected:retainOf(d)===x},KEEP_LABEL[x]))),
@@ -2096,7 +2109,8 @@ const SCAN_RE=/(\d{2})(\d{4})(\d{3})(\d{2})(\d{3})\.(jpe?g|png|gif|webp|bmp|pdf|
 const isScanFile=n=>/\.(jpe?g|png|gif|webp|bmp|pdf|tiff?)$/i.test(String(n||''));
 function parseScanName(name){const s=String(name||'');const m=s.match(SCAN_RE);if(m)return {code:m[1],yr:+m[2],n:+m[3],sub:+m[4],page:+m[5]};
   const no=parseNo(s);if(!no)return null;const pg=s.replace(/\.[^.]+$/,'').match(/[_\s(](\d{1,3})\)?$/);return {code:'',yr:no.yr,n:no.n,sub:no.sub,page:pg?+pg[1]:1};}
-const scanN=d=>(d.scans||[]).length||(d.files||[]).filter(f=>f.scan).length||Number(d.scanN)||0;
+const isScanF=f=>!!(f&&(f.scan||SCAN_RE.test(f.name||'')));
+const scanN=d=>(d.scans||[]).length||(d.files||[]).filter(isScanF).length||Number(d.scanN)||0;
 const scanCount=d=>scanN(d)?`${scanN(d)}쪽`:'';
 function scanView(d){const sc=(d.scans||[]).slice().sort((a,b)=>(a.page||0)-(b.page||0));if(!sc.length)return null;
   const box=h('div',{class:'attach-view'},h('h3',{style:'margin:0 0 8px'},`스캔본 ${sc.length}쪽`));
