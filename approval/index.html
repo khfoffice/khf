@@ -603,13 +603,23 @@ td.nw{white-space:nowrap;font-variant-numeric:tabular-nums}
 </div>
 <script>
 /* ================= 프로그램 버전 (고칠 때마다 올림) ================= */
-const APP_VER='2026.11.17 (v45)';
+const APP_VER='2026.11.17 (v46)';
 (function(){const put=()=>{const el=document.getElementById('appVer');if(el)el.textContent='버전 '+APP_VER;};put();document.addEventListener('DOMContentLoaded',put);
   // M365 버전: 서버에 새 버전이 올라왔는지 확인 (열 때 + 30분마다)
-  const chk=async()=>{if(!window.__isM365)return;try{const r=await fetch(location.pathname+'?v='+Date.now(),{cache:'no-store'});const tx=await r.text();const m=tx.match(/const APP_VER='([^']+)'/);
-    if(m&&m[1]!==APP_VER&&!document.getElementById('verNew')){const b=document.createElement('div');b.id='verNew';b.className='notice';b.style.cssText='position:fixed;left:50%;transform:translateX(-50%);bottom:16px;z-index:70;display:flex;gap:10px;align-items:center;box-shadow:0 6px 24px rgba(0,0,0,.2)';
-      b.innerHTML='새 버전('+m[1].replace(/[<>&]/g,'')+')이 올라왔어요. 지금 쓰는 버전은 '+APP_VER+'예요.';const btn=document.createElement('button');btn.className='btn sm';btn.textContent='새로고침';btn.onclick=()=>location.reload();b.append(btn);document.body.append(b);}}catch(e){}};
-  setTimeout(chk,8000);setInterval(chk,30*60e3);})();
+  // 새 버전이 올라와 있으면 '업데이트 중' 화면을 보여 주고 자동으로 새 버전을 연다 (작성 중인 글이 있으면 끝날 때까지 기다림)
+  const busy=()=>{try{return !!(window.S&&(S.edit||S.wkDirty||S.moDirty||S.inDirty||S.bulk));}catch(e){return false;}};
+  const tries=()=>{try{return JSON.parse(sessionStorage.getItem('eaUpd')||'{}');}catch(e){return {};}};
+  const go=v=>{const tr=tries();if(tr.v===v&&tr.n>=2)return false;try{sessionStorage.setItem('eaUpd',JSON.stringify({v,n:(tr.v===v?tr.n:0)+1}));}catch(e){}
+    let ov=document.getElementById('verUpd');if(!ov){ov=document.createElement('div');ov.id='verUpd';ov.style.cssText='position:fixed;inset:0;z-index:99;background:rgba(255,255,255,.96);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;font:15px/1.5 system-ui,sans-serif;color:#223';
+      ov.innerHTML='<div style="width:34px;height:34px;border:4px solid #c9d3e0;border-top-color:#2b5a8a;border-radius:50%;animation:spin 1s linear infinite"></div><b>새 버전으로 업데이트하는 중이에요</b><span style="color:#667">'+APP_VER.replace(/[<>&]/g,'')+' → '+v.replace(/[<>&]/g,'')+'</span><style>@keyframes spin{to{transform:rotate(360deg)}}</style>';document.body.append(ov);}
+    setTimeout(()=>{const u=new URL(location.href);u.searchParams.set('v',v.replace(/\W+/g,''));location.replace(u.toString());},900);return true;};
+  const chk=async first=>{if(!window.__isM365)return;try{const r=await fetch(location.pathname+'?nc='+Date.now(),{cache:'no-store'});const tx=await r.text();const m=tx.match(/const APP_VER='([^']+)'/);
+    if(!m||m[1]===APP_VER){try{sessionStorage.removeItem('eaUpd');}catch(e){}return;}
+    if(first||!busy()){go(m[1]);return;}
+    if(!document.getElementById('verNew')){const b=document.createElement('div');b.id='verNew';b.className='notice';b.style.cssText='position:fixed;left:50%;transform:translateX(-50%);bottom:16px;z-index:70;display:flex;gap:10px;align-items:center;box-shadow:0 6px 24px rgba(0,0,0,.2)';
+      b.textContent='새 버전('+m[1]+')이 올라왔어요. 작성 중인 내용을 저장하면 자동으로 업데이트돼요.';const btn=document.createElement('button');btn.className='btn sm';btn.textContent='지금 업데이트';btn.onclick=()=>go(m[1]);b.append(btn);document.body.append(b);
+      const w=setInterval(()=>{if(!busy()){clearInterval(w);go(m[1]);}},5000);}}catch(e){}};
+  setTimeout(()=>chk(true),1500);setInterval(()=>chk(false),10*60e3);})();
 /* ================= 위임전결기준 (206. 위임전결규정 별표) ================= */
 // 단계: 1 팀장, 2 국원장, 3 상임이사(상무), 4 이사장
 const RULES=(()=>{const src={
@@ -877,20 +887,25 @@ async function sealDoc(d){
 // 이관 문서 목록 정보 (모든 직원이 대장에서 봄): 번호·지점·제목·일자·발송처/수신·기안자·파일건수
 function impListInfo(d){const o={};for(const k of ['title','date','draftDate','recvDate','sender','to','authorName','origNo','team','vendor','replyNeed','replyNo','amount','keep'])if(d[k]!=null&&d[k]!=='')o[k]=d[k];
   o.fileCount=(d.files||[]).length||Number(d.fileCount)||0;if(scanN(d))o.scanN=scanN(d);return o;}
+// 이관 문서 내용 풀기 (문서를 열거나 고칠 때)
+async function fullDoc(id){const cur=S.docs[id];if(!cur||!cur._lazy)return cur;const raw=rawDocs[id];if(!raw)return cur;openDoc.full=true;let d;try{d=await openDoc(raw);}finally{openDoc.full=false;}if(d){S.docs[id]=d;}return S.docs[id];}
+// 관리자: 화면이 뜬 뒤 쉬는 동안 이관 문서를 조금씩 풀어 둔다 (담당자 열쇠 나눠 주기용)
+let lazyBg=false;async function lazyWarm(){if(lazyBg||!S.isAdmin||S.readOnly)return;lazyBg=true;try{for(;;){const ids=Object.values(S.docs).filter(d=>d._lazy).slice(0,15).map(d=>d.id);if(!ids.length)break;for(const id of ids)await fullDoc(id);await new Promise(r=>setTimeout(r,400));}}finally{lazyBg=false;}syncKeys();}
 async function openDoc(raw){
   if(!raw.enc)return null;
   const clear={};for(const k of CLEAR)if(raw[k]!==undefined)clear[k]=raw[k];
-  const c=K.plain[raw.id];if(c&&c.iv===raw.enc.iv)return {...c.body,...clear,_keys:raw.keys||{},_kn:raw.kn||{}};
+  const c=K.plain[raw.id];if(c&&c.iv===raw.enc.iv)return {...c.body,...clear,_keys:raw.keys||{},_kn:raw.kn||{}};   // 이미 푼 문서
   const w=raw.keys&&raw.keys[S.me];if(!w||!K.priv)return raw.imported&&raw.pub?{...raw.pub,...clear,files:[],scans:[],_locked:true,_keys:raw.keys||{},_kn:raw.kn||{}}:null;
+  if(raw.imported&&raw.pub&&!openDoc.full)return {...raw.pub,...clear,files:[],scans:[],_lazy:true,_keys:raw.keys||{},_kn:raw.kn||{}};   // 이관 문서는 열 때 내용을 푼다
   try{const key=await crypto.subtle.unwrapKey('raw',unb64(w),K.priv,RSA,{name:'AES-GCM'},true,['encrypt','decrypt']);
     const pt=await crypto.subtle.decrypt({name:'AES-GCM',iv:unb64(raw.enc.iv)},key,unb64(raw.enc.ct));
     const body=JSON.parse(new TextDecoder().decode(pt));K.plain[raw.id]={iv:raw.enc.iv,body,key};
     return {...body,...clear,_keys:raw.keys||{},_kn:raw.kn||{}};}catch(e){console.warn('열 수 없는 문서',raw.id);return null;}}
 const rawDocs={};let ingesting=null,ingestAgain=false;
-function ingest(){if(ingesting){ingestAgain=true;return;}ingesting=(async()=>{const out={};for(const [id,r] of Object.entries(rawDocs)){const d=await openDoc(r);if(d)out[id]=d;}S.docs=out;S.ready.docs=true;ingesting=null;soon();if(ingestAgain){ingestAgain=false;ingest();}else setTimeout(pubMigrate,3000);})();}
+function ingest(){if(ingesting){ingestAgain=true;return;}ingesting=(async()=>{const t0=performance.now();const out={};const ents=Object.entries(rawDocs);for(let i=0;i<ents.length;i+=40){const part=await Promise.all(ents.slice(i,i+40).map(([id,r])=>openDoc(r).then(d=>[id,d])));for(const [id,d] of part)if(d)out[id]=d;}S.docs=out;S.perf=S.perf||{};S.perf.ingest=Math.round(performance.now()-t0);S.perf.n=ents.length;if(!S.perf.first)S.perf.first=Math.round(performance.now());S.perf.lazyN=Object.values(out).filter(d=>d._lazy).length;S.ready.docs=true;ingesting=null;soon();if(ingestAgain){ingestAgain=false;ingest();}else{setTimeout(pubMigrate,3000);setTimeout(lazyWarm,5000);}})();}
 // 예전에 불러온 이관 문서에 목록 정보가 없으면 관리자 화면에서 한 번씩 채워 둔다
 let pubMigrating=false;
-async function pubMigrate(){if(pubMigrating||!S.isAdmin||S.readOnly||!K.priv)return;const need=Object.values(S.docs).filter(d=>d.imported&&!d._locked&&!d.deleted&&rawDocs[d.id]&&!rawDocs[d.id].pub);if(!need.length)return;
+async function pubMigrate(){if(pubMigrating||!S.isAdmin||S.readOnly||!K.priv)return;const need=Object.values(S.docs).filter(d=>d.imported&&!d._locked&&!d._lazy&&!d.deleted&&rawDocs[d.id]&&!rawDocs[d.id].pub);if(!need.length)return;
   pubMigrating=true;S.bulk=true;try{for(const d of need){try{await writeDoc({...clone(d)},true);}catch(e){console.warn('목록 정보 정리',d.id,e);}}}finally{S.bulk=false;pubMigrating=false;render();}}
 const keySync=new Set();
 async function syncKeys(){if(S.readOnly||!S.ready.links||!K.priv)return;
@@ -903,7 +918,7 @@ function writeDoc(d,keepTime){if(!keepTime)d.updatedAt=Date.now();return serial(
   if(!K.priv)throw new Error('암호 키가 준비되지 않았어요. 페이지를 새로 고쳐 주세요.');
   const s=await sealDoc(d);if(!Object.keys(s.out.keys).length)throw new Error('받을 사람의 키가 없어 저장하지 못했어요.');
   await S.db.doc('docs/'+d.id).set(s.out);K.plain[d.id]={iv:s.iv,body:s.body,key:s.key};rawDocs[d.id]=s.out;S.docs[d.id]={...clone(d),_keys:s.out.keys,_kn:s.out.kn};});}
-function patchDoc(id,p){const cur=S.docs[id];if(!cur)return Promise.reject(new Error('문서를 찾을 수 없어요'));return writeDoc({...clone(cur),...p},true);}
+async function patchDoc(id,p){let cur=S.docs[id];if(cur&&cur._lazy)cur=await fullDoc(id);if(!cur)throw new Error('문서를 찾을 수 없어요');if(cur._lazy)throw new Error('문서 내용을 풀지 못했어요');return writeDoc({...clone(cur),...p},true);}
 function noSlot(d,no){return S.db.doc(`nos/${d.kind}_${d.branch}_${d.yr}_${no.n}_${no.sub||0}`).set({doc:d.id,at:Date.now(),kind:d.kind,branch:d.branch,yr:Number(d.yr),n:no.n,sub:no.sub||0});}
 
 /* ================= 외부 라이브러리 ================= */
@@ -1217,7 +1232,7 @@ function paperBuy(d){
     d.vat!=='inc'?h('p',{style:'font-size:9pt;text-align:right;margin:1mm 0 0'},`부가세 포함 ${won(buyTotalVat(d))}원 · 전결 기준 ${LV[buyLevel(buyTotalVat(d),d.goods!==false)]}`):h('p',{style:'font-size:9pt;text-align:right;margin:1mm 0 0'},`전결 기준 ${LV[buyLevel(buyTotalVat(d),d.goods!==false)]}`),
     h('table',{style:'margin-top:3mm'},h('colgroup',{},h('col',{style:'width:18mm'}),h('col',{})),
       h('tr',{},h('th',{},'주'),h('td',{style:'white-space:pre-wrap'},(d.note?d.note+'\n':'')+(attachText(d)||'')))),
-    h('div',{style:'text-align:right;margin-top:8mm;font-size:11pt'},'신청인 :   ',h('b',{style:'letter-spacing:.3em'},nameK(d.author)),'   (인)'),
+    h('div',{style:'text-align:right;margin-top:8mm;font-size:11pt'},'신청인 :   ',h('b',{style:'letter-spacing:.3em'},nameK(d.author)),'   ',applicantSeal(d)),
     h('div',{class:'foot'},C().org.name));
 }
 function buyTotal(d){return (d.items||[]).reduce((a,x)=>a+(+x.qty||0)*(+x.price||0),0);}
@@ -1566,7 +1581,7 @@ function lockedView(d){const L=[['문서번호',noText(d)],['지점',branchById(
   return h('section',{class:'panel'},h('div',{class:'row between'},h('div',{},h('div',{class:'kind'},KINDS[d.kind].label+' · 이관 문서'),h('h2',{style:'margin:2px 0 6px'},d.title||'(제목 없음)')),h('button',{type:'button',class:'btn ghost sm',onclick:()=>go(S.tab)},'목록으로')),
     h('div',{class:'tbl'},h('table',{class:'t'},L.map(([k,v])=>h('tr',{},h('th',{style:'width:120px;text-align:left'},k),h('td',{},String(v)))))),
     h('p',{class:'notice small',style:'margin-top:12px'},'이관 문서는 담당자와 관리자, 관리자가 지정한 사람만 내용을 볼 수 있어요. 필요하면 관리자에게 열람 지정을 요청해 주세요.'));}
-function docView(d){if(d._locked)return lockedView(d);alogView(d);
+function docView(d){if(d._locked)return lockedView(d);if(d._lazy){fullDoc(d.id).then(()=>render(true));return h('section',{class:'panel'},h('p',{class:'muted'},'문서를 여는 중…'));}alogView(d);
   const e=ev(d),k=myKey(),isAuthor=d.authorUid===S.me||(k&&d.author===k);
   const paper=paperOf(d);const pw=h('div',{class:'paper-wrap'},paper,scanView(d),attachView((d.files||[]).filter(f=>f.scan),'스캔본'),attachView((d.files||[]).filter(f=>!f.scan)));
   const side=h('div',{class:'side'});
@@ -1601,6 +1616,7 @@ function docView(d){if(d._locked)return lockedView(d);alogView(d);
   const fname=`${KINDS[d.kind].short}_${noText(d)||'번호없음'}_${(d.title||'').slice(0,30)}.pdf`.replace(/[\\/:*?"<>|]/g,'_');
   const pm=h('div',{class:'msg'});
   if(d.kind==='out')side.append(outPrintPanel(d,paper,fname));else side.append(h('section',{class:'panel acts'},h('h2',{style:'margin:0'},'문서'),
+    h('button',{class:'btn',type:'button',onclick:()=>printPaper(paper)},'인쇄'),
     (d.files||[]).length?h('button',{class:'btn',type:'button',onclick:async ev2=>{ev2.target.disabled=true;pm.textContent='PDF 만드는 중… (첨부파일을 붙이는 중)';pm.className='msg';
         try{const main=await pdfBlobOf(paper);const r=await mergeWithAttachments(main,d.files);const saved=await saveBlob(fname,r.blob);
           pm.textContent=saved?(r.skipped.length?`문서와 첨부 ${r.added.length}개를 한 PDF로 내려받았어요. ${r.skipped.join(', ')}은(는) PDF에 붙일 수 없어 '첨부파일 원본'에서 따로 내려받아 주세요.`:`문서와 첨부 ${r.added.length}개를 한 PDF로 내려받았어요.`):'';pm.className=r.skipped.length?'msg err':'msg good';}
@@ -2118,7 +2134,7 @@ function scanDialog(kind,yr){
     const up=(await uploadFiles(out,m)).map(f=>({...f,scan:true}));if(up.length<out.length)throw new Error(`${lab}: ${out.length-up.length}쪽을 올리지 못했어요`);return up;};
   go2.onclick=async()=>{st.busy=true;go2.disabled=true;let ok=0,made=0,skip=0;const gs=groups();S.bulk=true;
     try{for(const [i,g] of gs.entries()){m.textContent=`${i+1}/${gs.length} · ${noLab(g)} 연결 중…`;m.className='msg';
-        const pages=g.items.slice().sort((a,b)=>a.p.page-b.p.page);let d=findDoc(g);
+        const pages=g.items.slice().sort((a,b)=>a.p.page-b.p.page);let d=findDoc(g);if(d&&d._lazy)d=await fullDoc(d.id);
         if(!d){if(!st.create||usedNos(kind,g.br,g.yr).has(`${g.n}-${g.sub}`)){skip++;continue;}
           d={id:uid36(),kind,imported:true,branch:g.br,yr:g.yr,no:{n:g.n,sub:g.sub},title:'',date:'',draftDate:'',recvDate:'',state:'done',createdAt:Date.now(),files:[],scans:[]};
           if(pages[0].ref&&!st.copy)d.scans=pages.map(x=>({...x.ref,name:x.name,page:x.p.page}));else if(pages[0].ref)d.files=await pull(pages,noLab(g));else d.files=(await uploadFiles(pages.map(x=>x.file),m)).map(f=>({...f,scan:true}));
@@ -2424,7 +2440,8 @@ function mailAfterDecide(d,e,v,hu,note){
   if(hu)return mailKeys([steps[steps.length-1]?.key],'후결 요청 (먼저 시행됨)',d),mailKeys([d.author],'긴급 시행 (후결 대기)',d);
   if(e.idx+1<steps.length)return mailStep(d,e.idx+1,'결재 요청');
   mailKeys([d.author],'결재 완료',d,PRINT_KINDS.includes(d.kind)?PRINT_NOTE:'');}
-function adminStaff(v){
+function perfLine(){const p=S.perf||{};if(!p.first)return null;return h('p',{class:'small muted',style:'margin:0 0 10px'},`로딩 진단 · 처음 화면까지 ${(p.first/1000).toFixed(1)}초 · 불러온 문서 ${p.n}건 (문서 풀기 ${(p.ingest/1000).toFixed(1)}초) · 이관 문서 ${p.lazyN||0}건은 열 때 풀어요 · 버전 ${APP_VER}`);}
+function adminStaff(v){{const pl=perfLine();if(pl)v.append(pl);}
   if(window.__isM365){const am=h('div',{class:'msg'});let val=(C().admins||[]).join(', ');
     v.append(h('section',{class:'panel'},h('h2',{},'관리자와 알림 메일'),h('p',{class:'muted small',style:'margin-top:-6px'},'관리자는 khf 사이트 소유자 그룹에도 들어 있어야 설정을 저장할 수 있어요. 메일 주소를 쉼표로 구분해 적어 주세요.'),
       h('div',{class:'row'},h('input',{value:val,style:'flex:1;min-width:260px',oninput:e=>val=e.target.value}),h('button',{class:'btn sm',type:'button',disabled:S.readOnly,onclick:()=>{const l=[...new Set(val.split(/[,\s]+/).map(x=>x.trim().toLowerCase()).filter(x=>/@/.test(x)))];if(!l.length){am.textContent='관리자를 한 명 이상 적어 주세요.';am.className='msg err';return;}writeConfig(c=>{c.admins=l;}).then(()=>{am.textContent='저장했어요.';am.className='msg good';}).catch(er=>writeErr(er,am));}},'저장'),am),
@@ -2575,7 +2592,13 @@ function formPaper(d,title,body){
     coopRow(d)?h('table',{style:'margin-top:-.3mm'},h('colgroup',{},h('col',{style:'width:18mm'}),h('col',{})),coopRow(d,1)):null,
     h('div',{style:'height:5mm'}),...body,h('div',{class:'foot'},C().org.name));}
 const kvTable=(rows,w=30)=>h('table',{},h('colgroup',{},h('col',{style:`width:${w}mm`}),h('col',{})),rows.filter(Boolean).map(([k,v,st])=>h('tr',{},h('th',{},k),h('td',{style:'white-space:pre-wrap;'+(st||'')},v??''))));
-const signLine=(d,label='신 청 자')=>h('div',{style:'text-align:right;margin-top:8mm;font-size:11pt'},h('div',{},dot(d.draftDate||'')),h('div',{style:'margin-top:3mm'},`${label} :   `,h('b',{style:'letter-spacing:.3em'},nameK(d.author)),'   ',(ev(d).status!=='draft'&&signImg(d.author,'display:inline-block;height:11mm;max-width:40mm;vertical-align:middle'))||'(인)'));
+// 신청인 날인: 등록한 서명이 있으면 서명, 없으면 이름 도장(빨간 원)을 자동으로 찍는다 (결재를 올린 뒤)
+function nameStamp(k,size){const n=String(nameK(k)||'').replace(/\s/g,'');const ch=[...n];const sz=size||'11mm';
+  const txt=ch.length<=3?`<text x="50" y="${ch.length===2?58:50}" font-size="${ch.length===2?30:24}" text-anchor="middle" font-weight="700" fill="#d0021b" font-family="Malgun Gothic,sans-serif">${ch.join('').replace(/[<>&]/g,'')}</text><text x="50" y="80" font-size="20" text-anchor="middle" font-weight="700" fill="#d0021b" font-family="Malgun Gothic,sans-serif">${ch.length===2?'':'인'}</text>`:`<text x="50" y="58" font-size="20" text-anchor="middle" font-weight="700" fill="#d0021b" font-family="Malgun Gothic,sans-serif">${n.replace(/[<>&]/g,'')}</text>`;
+  const svg=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="45" fill="none" stroke="#d0021b" stroke-width="6"/>${txt}</svg>`;
+  return h('img',{class:'sig stamp-auto',src:'data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg),alt:nameK(k)+' 도장',style:`display:inline-block;height:${sz};width:${sz};vertical-align:middle;mix-blend-mode:multiply`});}
+const applicantSeal=d=>ev(d).status==='draft'?'(인)':(signImg(d.author,'display:inline-block;height:11mm;max-width:40mm;vertical-align:middle')||nameStamp(d.author));
+const signLine=(d,label='신 청 자')=>h('div',{style:'text-align:right;margin-top:8mm;font-size:11pt'},h('div',{},dot(d.draftDate||'')),h('div',{style:'margin-top:3mm'},`${label} :   `,h('b',{style:'letter-spacing:.3em'},nameK(d.author)),'   ',applicantSeal(d)));
 const smallNote=t=>h('p',{style:'font-size:9pt;margin:2mm 0 0'},t);
 const dateIn=(d,f,label,cls='f s1')=>h('label',{class:cls},label,h('input',{type:'date',id:'e_'+f,value:d[f]||'',oninput:e=>d[f]=e.target.value}));
 const textIn=(d,f,label,cls='f',ph='',after)=>h('label',{class:cls},label,h('input',{id:'e_'+f,value:d[f]||'',placeholder:ph,oninput:e=>{d[f]=e.target.value;after&&after();}}));
@@ -2636,7 +2659,7 @@ const FORMS={
       h('div',{style:'margin-top:6mm;font-size:9pt'},h('b',{},'<별 첨> 보조금 지급기준'),kvTable([['자녀학비 보조금','대학교 1학기당 100만원'],['자기계발·문화생활 보조금','업무관련 교육, 건강증진을 위한 체력단련 등 자기계발에 필요한 교육비용 및 공연, 전시, 도서구입, 여행 등 정서함양에 필요한 문화생활비를 연 70만원 한도 내에서 지원한다.\n※ 2026. 1. 1. 이후부터 통합하여 적용\n※ 여행은 숙박비, 체험활동비, 입장료에 한함']],40))])},
 
   expense:{label:'지출결의서',short:'지출결의',desc:'세금계산서 등 지출 (기관별) · 금액으로 전결 자동',lv:d=>buyLevel(sumBy(d.rows,x=>x.amount),false),sig:['rows','account','memo'],amount:d=>sumBy(d.rows,x=>x.amount),
-    init:d=>{d.rows=[{cat:'지급수수료',content:'',amount:''}];d.account='';d.memo='';d.attach='세금계산서 1부.';},
+    init:d=>{d.rows=[{cat:'',content:'',amount:''}];d.account='';d.memo='';d.attach='세금계산서 1부.';},
     title:d=>{const r=(d.rows||[]).filter(x=>x.content);return `지출결의 - ${r[0]?.content||'지출'}${r.length>1?` 외 ${r.length-1}건`:''} (${branchById(d.branch).name})`;},
     check:d=>!(d.rows||[]).some(x=>Number(x.amount)>0)?'지출 내용과 금액을 넣어 주세요.':(d.rows||[]).length>10?'지출 항목은 10줄까지 넣을 수 있어요.':null,
     edit(d,form,{refreshSteps}){const tot=h('b',{class:'total'});const upd=()=>{tot.textContent=won(sumBy(d.rows,x=>x.amount))+'원';refreshSteps();};
