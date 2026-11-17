@@ -359,7 +359,7 @@ function(e){return e.hasOwnProperty("authorization_endpoint")&&e.hasOwnProperty(
     if(!BURL[id]){BURL[id]='loading';(async()=>{try{await ready;const r=await blobFetch(id);BURL[id]=URL.createObjectURL(await r.blob());if(typeof render==='function')render();}catch(e){console.warn('이미지',id,e);BURL[id]=null;}})();}
     return 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';};
   const downloads={async save({filename,data}){const url=URL.createObjectURL(data instanceof Blob?data:new Blob([data]));const a=document.createElement('a');a.href=url;a.download=filename;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),5000);}};
-  window.__sendMail=async(to,subject,body)=>{to=[...new Set(to.filter(Boolean))];if(!to.length)return;await gx('POST','/me/sendMail',{message:{subject,body:{contentType:'Text',content:body},toRecipients:to.map(a=>({emailAddress:{address:a}}))},saveToSentItems:true});};
+  window.__sendMail=async(to,subject,body)=>{to=[...new Set(to.filter(Boolean))];if(!to.length)return;await gx('POST','/me/sendMail',{message:{subject,body:{contentType:'Text',content:body},toRecipients:to.map(a=>({emailAddress:{address:a}}))},saveToSentItems:false});};
   // 정기 백업 zip → 관리자 본인 OneDrive (앱/KHF-EA/Backup/연도/) : 개인정보가 든 백업이 사이트 구성원 모두에게 보이지 않게
   window.__saveBackup=async(name,blob)=>{await ready;const yr=(name.match(/_(\d{4})/)||[])[1]||String(new Date().getFullYear());
     const p=`/me/drive/root:/Apps/KHF-EA/Backup/${yr}/${name}`;
@@ -651,7 +651,7 @@ td.nw{white-space:nowrap;font-variant-numeric:tabular-nums}
 </div>
 <script>
 /* ================= 프로그램 버전 (고칠 때마다 올림) ================= */
-const APP_VER='2026.11.17 (v48)';
+const APP_VER='2026.11.17 (v50)';
 (function(){const put=()=>{const el=document.getElementById('appVer');if(el)el.textContent='버전 '+APP_VER;};put();document.addEventListener('DOMContentLoaded',put);
   // M365 버전: 서버에 새 버전이 올라왔는지 확인 (열 때 + 30분마다)
   // 새 버전이 올라와 있으면 '업데이트 중' 화면을 보여 주고 자동으로 새 버전을 연다 (작성 중인 글이 있으면 끝날 때까지 기다림)
@@ -2066,7 +2066,7 @@ const LCOLS={
   out:[['발신번호',d=>noText(d)],['지점',d=>branchById(d.branch).name],['제목',d=>d.title],['스캔',d=>scanCount(d)],['수신',d=>d.to||''],['시행일자',d=>docDate(d)],['기안자',d=>authorName(d)],['직인',d=>d.noSeal?'생략':''],['상태',d=>STATUS[ev(d).status]]],
   gian:[['시행번호',d=>noText(d)],['지점',d=>branchById(d.branch).name],['제목',d=>d.title],['스캔',d=>scanCount(d)],['주무부서',d=>d.team||''],['기안자',d=>authorName(d)],['기안일',d=>d.draftDate||''],['시행일',d=>docDate(d)],['전결권자',d=>finalName(d)],['보존기간',d=>d.keep||''],['상태',d=>STATUS[ev(d).status]]],
   form:[['종류',d=>KINDS[d.kind].short],['제목',d=>d.title],['신청인',d=>authorName(d)],['금액',d=>amountOf(d)??''],['작성일',d=>d.draftDate||''],['결재일',d=>docDate(d)],['전결권자',d=>finalName(d)],['상태',d=>STATUS[ev(d).status]]],
-  buy:[['구입번호',d=>noText(d)],['지점',d=>branchById(d.branch).name],['제목',d=>d.title],['거래처',d=>d.vendor||''],['금액(VAT포함)',d=>d.imported?(d.amount||''):buyTotalVat(d)],['신청인',d=>authorName(d)],['작성일',d=>d.draftDate||''],['결재일',d=>docDate(d)],['전결권자',d=>finalName(d)],['상태',d=>STATUS[ev(d).status]]]};
+  buy:[['구입번호',d=>noText(d)],['지점',d=>branchById(d.branch).name],['제목',d=>d.title],['스캔',d=>scanCount(d)],['거래처',d=>d.vendor||''],['금액(VAT포함)',d=>d.imported?(d.amount||''):buyTotalVat(d)],['신청인',d=>authorName(d)],['작성일',d=>d.draftDate||''],['결재일',d=>docDate(d)],['전결권자',d=>finalName(d)],['상태',d=>STATUS[ev(d).status]]]};
 const authorName=d=>d.imported?(d.authorName||''):nameK(d.author);
 const docDate=d=>d.imported?(d.date||''):(ev(d).status==='approved'?(d.execDate||ymd(new Date(ev(d).at))):'');
 function finalName(d){if(d.imported)return '';const e=ev(d),s=(e.steps||[]).filter(x=>!x.coop);return s.length?LV[s[s.length-1].level]:'기안자';}
@@ -2140,14 +2140,15 @@ function backupDialog(yr0,opt={}){
 }
 function viewLedger(v){
   const kind=S.sub.lk||'in',br=S.sub.lb||'all',yr=S.sub.ly||new Date().getFullYear(),q=S.sub.lq||'';
-  const list=Object.values(S.docs).filter(d=>(kind==='form'?!!FORMS[d.kind]:d.kind===kind)&&!d.deleted&&Number(d.yr)===Number(yr)&&(br==='all'||d.branch===br)&&(d.no||d.kind==='in'||['pending','approved'].includes(ev(d).status))&&(!q||squash(LCOLS[kind].map(([,f])=>f(d)).join(' ')).includes(squash(q)))).sort(kind==='form'?((a,b)=>String(docDate(b)||b.draftDate||'').localeCompare(String(docDate(a)||a.draftDate||''))):byNoDesc);
+  const fk=S.sub.lfk||'all';
+  const list=Object.values(S.docs).filter(d=>(kind==='form'?!!FORMS[d.kind]&&(fk==='all'||d.kind===fk):d.kind===kind)&&!d.deleted&&Number(d.yr)===Number(yr)&&(br==='all'||d.branch===br)&&(d.no||d.kind==='in'||['pending','approved'].includes(ev(d).status))&&(!q||squash(LCOLS[kind].map(([,f])=>f(d)).join(' ')).includes(squash(q)))).sort(kind==='form'?((a,b)=>String(docDate(b)||b.draftDate||'').localeCompare(String(docDate(a)||a.draftDate||''))):byNoDesc);
   const cols=LCOLS[kind];
   const qi=h('input',{id:'lq',type:'search',value:q,placeholder:'제목·발송처·번호로 찾기',style:'max-width:260px',oninput:e=>{S.sub.lq=e.target.value;clearTimeout(viewLedger.t);viewLedger.t=setTimeout(()=>{render(true);const el=$('lq');if(el){el.focus();el.setSelectionRange(el.value.length,el.value.length);}},300);}});
   const m=h('div',{class:'msg'});
   v.append(h('section',{class:'panel'},
     h('div',{class:'seg',style:'max-width:620px;margin-bottom:12px'},[['in','수신'],['out','발신'],['gian','기안'],['buy','물품결의'],['form','신청서'],['etc','기타']].map(([k2,t])=>h('button',{type:'button','aria-pressed':kind===k2?'true':'false',onclick:()=>{S.sub.lk=k2;render(true);}},t))),
-    h('div',{class:'row between'},h('div',{class:'row'},h('select',{id:'lb',onchange:e=>{S.sub.lb=e.target.value;render(true);}},h('option',{value:'all'},'전체 지점'),C().branches.map(b=>h('option',{value:b.id,selected:br===b.id},b.name))),yearSel('ly',yr,x=>{S.sub.ly=x;loadYear(x);render(true);}),qi),
-      h('div',{class:'row'},m,h('button',{class:'btn ghost sm',type:'button',onclick:()=>backupDialog(yr)},'백업 (zip)'),S.isAdmin&&kind!=='form'&&kind!=='etc'?h('button',{class:'btn ghost sm',type:'button',onclick:()=>importDialog(kind,yr)},'기존 대장 불러오기'):null,S.isAdmin&&['in','out','gian'].includes(kind)?h('button',{class:'btn ghost sm',type:'button',onclick:()=>scanDialog(kind,yr)},'스캔파일 연결'):null,h('button',{class:'btn sm',type:'button',onclick:()=>xlsxSave(`${kind==='form'?'신청서':KINDS[kind].short}대장_${yr}.xlsx`,[{name:`${kind==='form'?'신청서':KINDS[kind].short}대장`,title:`${yr}년 ${kind==='form'?'신청서':KINDS[kind].label} 대장${br!=='all'?' · '+branchById(br).name:''}`,rows:[cols.map(c=>c[0]),...list.slice().reverse().map(d=>cols.map(([,f])=>f(d)))],cols:cols.map(([t])=>t==='제목'?44:0)}]).catch(er=>{console.error(er);m.textContent='엑셀을 만들지 못했어요.';m.className='msg err';})},'엑셀 내려받기')))));
+    h('div',{class:'row between'},h('div',{class:'row'},h('select',{id:'lb',onchange:e=>{S.sub.lb=e.target.value;render(true);}},h('option',{value:'all'},'전체 지점'),C().branches.map(b=>h('option',{value:b.id,selected:br===b.id},b.name))),yearSel('ly',yr,x=>{S.sub.ly=x;loadYear(x);render(true);}),kind==='form'?h('select',{id:'lfk','aria-label':'신청서 종류',onchange:e=>{S.sub.lfk=e.target.value;render(true);}},h('option',{value:'all'},'모든 신청서'),Object.keys(FORMS).map(k2=>h('option',{value:k2,selected:fk===k2},KINDS[k2].label))):null,qi),
+      h('div',{class:'row'},m,h('button',{class:'btn ghost sm',type:'button',onclick:()=>backupDialog(yr)},'백업 (zip)'),S.isAdmin&&kind!=='form'&&kind!=='etc'?h('button',{class:'btn ghost sm',type:'button',onclick:()=>importDialog(kind,yr)},'기존 대장 불러오기'):null,S.isAdmin&&['in','out','gian','buy'].includes(kind)?h('button',{class:'btn ghost sm',type:'button',onclick:()=>scanDialog(kind,yr)},'스캔파일 연결'):null,h('button',{class:'btn sm',type:'button',onclick:()=>xlsxSave(`${kind==='form'?'신청서':KINDS[kind].short}대장_${yr}.xlsx`,[{name:`${kind==='form'?'신청서':KINDS[kind].short}대장`,title:`${yr}년 ${kind==='form'?(fk!=='all'?KINDS[fk].label:'신청서'):KINDS[kind].label} 대장${br!=='all'?' · '+branchById(br).name:''}`,rows:[cols.map(c=>c[0]),...list.slice().reverse().map(d=>cols.map(([,f])=>f(d)))],cols:cols.map(([t])=>t==='제목'?44:0)}]).catch(er=>{console.error(er);m.textContent='엑셀을 만들지 못했어요.';m.className='msg err';})},'엑셀 내려받기')))));
   v.append(h('section',{class:'panel'},h('p',{class:'small muted',style:'margin:0 0 8px'},`${list.length}건${S.isAdmin?' · 관리자는 모든 문서를 봐요':' · 내가 관련된 문서와 이관 문서 목록이 보여요 (이관 문서 내용은 담당·지정자만)'}`),list.length?h('div',{class:'tbl'},h('table',{class:'t'},h('tr',{},cols.map(([t])=>h('th',{},t))),list.map(d=>h('tr',{class:'click',onclick:()=>go('ledger',{open:d.id})},cols.map(([t,f])=>{const val=f(d);return h('td',{class:t==='제목'?'':(typeof val==='number'?'num':'nw')},typeof val==='number'&&t!=='파일건수'?won(val):val);}))))):h('p',{class:'empty'},'해당하는 문서가 없어요.')));
 }
 const loadedYears=new Set();
@@ -2505,7 +2506,9 @@ function mailAfterDecide(d,e,v,hu,note){
   const steps=e.steps||[];
   if(hu)return mailKeys([steps[steps.length-1]?.key],'후결 요청 (먼저 시행됨)',d),mailKeys([d.author],'긴급 시행 (후결 대기)',d);
   if(e.idx+1<steps.length)return mailStep(d,e.idx+1,'결재 요청');
-  mailKeys([d.author],'결재 완료',d,PRINT_KINDS.includes(d.kind)?PRINT_NOTE:'');}
+  if(!steps[e.idx]||!steps[e.idx].final&&steps.slice(e.idx+1).some(s=>!s.coop))return;   // 마지막 결재가 아니면 완료 메일 없음
+  const to=[d.author].filter(k=>k&&k!==myKey());   // 신청인(기안자)에게만
+  if(to.length)mailKeys(to,'결재 완료',d,PRINT_KINDS.includes(d.kind)?`${nameK(d.author)}님, 신청하신 ${KINDS[d.kind]?.label||'문서'}의 결재가 모두 끝났어요. 결재문서를 출력(인쇄 또는 PDF)해서 회계팀에 전달해 주세요.`:'');}
 function perfLine(){const p=S.perf||{};if(!p.first)return null;return h('p',{class:'small muted',style:'margin:0 0 10px'},`로딩 진단 · 처음 화면까지 ${(p.first/1000).toFixed(1)}초 · 불러온 문서 ${p.n}건 (문서 풀기 ${(p.ingest/1000).toFixed(1)}초) · 이관 문서 ${p.lazyN||0}건은 열 때 풀어요 · 버전 ${APP_VER}`);}
 function adminStaff(v){{const pl=perfLine();if(pl)v.append(pl);}
   if(window.__isM365){const am=h('div',{class:'msg'});let val=(C().admins||[]).join(', ');
