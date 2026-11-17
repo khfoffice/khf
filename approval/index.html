@@ -108,7 +108,7 @@ function(e){return e.hasOwnProperty("authorization_endpoint")&&e.hasOwnProperty(
   const LNAMES=[...new Set(Object.values(LISTS))];
   const FILES='EA_Files';                       // 첨부·직인·서명 (사이트 기본 문서 라이브러리 안 폴더)
   const KEYFILE='Apps/KHF-EA/ea-keys.json';     // 각자 OneDrive에 두는 열람 키
-  const POLL=Number(A.pollMs)||25000, CH=60000;
+  const POLL=Number(A.pollMs)||45000, CH=60000;
   const SEED=(A.eaAdmins||[]).map(x=>String(x).toLowerCase());
   let MS=null,ACC=null,ME=null,SITE=null,LIDS={},ADMINS=[...SEED];
   let readyRes;const ready=new Promise(r=>readyRes=r);
@@ -137,10 +137,22 @@ function(e){return e.hasOwnProperty("authorization_endpoint")&&e.hasOwnProperty(
   async function token(scopes=SCOPES){
     try{return (await MS.acquireTokenSilent({scopes,account:ACC})).accessToken;}
     catch(e){if(e instanceof msal.InteractionRequiredAuthError){await MS.acquireTokenRedirect({scopes,account:ACC});}throw e;}}
+  // SharePoint 요청 조절: 한 번에 4개까지만 보내고, '요청이 많다(429)'는 답이 오면 모든 요청을 잠시 멈췄다가 다시 보낸다
+  const RQ={run:0,wait:[],pauseUntil:0};
+  const slot=()=>new Promise(r=>{if(RQ.run<4){RQ.run++;r();}else RQ.wait.push(r);});
+  const free=()=>{const n=RQ.wait.shift();if(n)n();else RQ.run--;};
+  function busyNote(sec){let b=document.getElementById('m365busy');
+    if(sec<=0){if(b)b.remove();return;}
+    if(!b){b=document.createElement('div');b.id='m365busy';b.style.cssText='position:fixed;left:50%;top:10px;transform:translateX(-50%);z-index:95;background:#fff7e0;border:1px solid #e8c766;color:#5a4500;border-radius:10px;padding:8px 14px;font:13px/1.4 system-ui,sans-serif;box-shadow:0 4px 16px rgba(0,0,0,.12)';document.body.append(b);}
+    b.textContent=`SharePoint 요청이 많아 잠시 기다리는 중이에요 (${sec}초). 창을 닫지 말아 주세요.`;
+    const g=document.querySelector('#m365gate .body p');if(g&&document.getElementById('m365gate').style.display!=='none')g.textContent=`SharePoint 요청이 많아 ${sec}초 기다렸다가 다시 연결해요.`;}
+  async function pauseWait(){while(Date.now()<RQ.pauseUntil){busyNote(Math.ceil((RQ.pauseUntil-Date.now())/1000));await new Promise(r=>setTimeout(r,Math.min(1000,RQ.pauseUntil-Date.now()+20)));}busyNote(0);}
   async function gx(method,path,body,opt={},tries=0){
     const isBlob=body instanceof Blob;
-    const res=await fetch(path.startsWith('http')?path:G+path,{method,headers:{Authorization:'Bearer '+await token(opt.scopes),...(body!==undefined&&!isBlob?{'Content-Type':'application/json'}:{}),...(opt.headers||{})},body:body===undefined?undefined:(isBlob?body:JSON.stringify(body))});
-    if((res.status===429||res.status===503||res.status===504)&&tries<5){await new Promise(r=>setTimeout(r,(Number(res.headers.get('Retry-After'))||1+tries)*1000));return gx(method,path,body,opt,tries+1);}
+    await pauseWait();await slot();let res;
+    try{res=await fetch(path.startsWith('http')?path:G+path,{method,headers:{Authorization:'Bearer '+await token(opt.scopes),...(body!==undefined&&!isBlob?{'Content-Type':'application/json'}:{}),...(opt.headers||{})},body:body===undefined?undefined:(isBlob?body:JSON.stringify(body))});}
+    finally{free();}
+    if((res.status===429||res.status===503||res.status===504)&&tries<8){const ra=Number(res.headers.get('Retry-After'));const wait=Math.min(120,ra>0?ra:Math.min(60,2**(tries+1)));RQ.pauseUntil=Math.max(RQ.pauseUntil,Date.now()+wait*1000);return gx(method,path,body,opt,tries+1);}
     if(!res.ok){let m='';try{m=(await res.json()).error?.message||'';}catch{}const e=new Error(m||('HTTP '+res.status));e.status=res.status;e.code=res.status===403||res.status===401?'forbidden':'graph';throw e;}
     if(res.status===204||res.status===202||method==='DELETE')return null;
     const txt=await res.text();return txt?JSON.parse(txt):null;}
@@ -168,6 +180,19 @@ function(e){return e.hasOwnProperty("authorization_endpoint")&&e.hasOwnProperty(
 
   /* ---------- 캐시 ---------- */
   const cache=new Map();      // path -> {id,stamp,data,etag,ok}
+  // 접속할 때마다 SharePoint에서 전부 다시 받지 않도록, 받은 목록을 이 PC 브라우저에 보관 (문서 내용은 잠긴 상태 그대로)
+  const IDB={db:null,dirty:new Set(),gone:new Set(),t:null,name:''};
+  function idbOpen(){return new Promise(res=>{try{const rq=indexedDB.open(IDB.name,2);rq.onupgradeneeded=()=>{const d=rq.result;if(!d.objectStoreNames.contains('items'))d.createObjectStore('items');if(!d.objectStoreNames.contains('blobs'))d.createObjectStore('blobs');if(!d.objectStoreNames.contains('meta'))d.createObjectStore('meta');};rq.onsuccess=()=>res(rq.result);rq.onerror=()=>res(null);}catch(e){res(null);}});}
+  const idbReq=r=>new Promise((ok,no)=>{r.onsuccess=()=>ok(r.result);r.onerror=()=>no(r.error);});
+  async function idbLoad(){if(!IDB.db)return 0;try{const tx=IDB.db.transaction('items','readonly'),st=tx.objectStore('items');const [ks,vs]=await Promise.all([idbReq(st.getAllKeys()),idbReq(st.getAll())]);ks.forEach((k,i)=>{if(!cache.has(k))cache.set(k,vs[i]);});return ks.length;}catch(e){console.warn('저장된 목록을 읽지 못했어요',e);return 0;}}
+  function idbMark(path,gone){if(!IDB.db)return;(gone?IDB.gone:IDB.dirty).add(path);(gone?IDB.dirty:IDB.gone).delete(path);clearTimeout(IDB.t);IDB.t=setTimeout(idbFlush,1500);}
+  function idbFlush(){if(!IDB.db)return;const d=[...IDB.dirty],g=[...IDB.gone];IDB.dirty.clear();IDB.gone.clear();try{const tx=IDB.db.transaction('items','readwrite'),st=tx.objectStore('items');for(const p of d){const e=cache.get(p);if(e&&e.ok!==undefined&&!String(e.stamp||'').startsWith('local:'))st.put(e,p);}for(const p of g)st.delete(p);}catch(e){console.warn(e);}}
+  window.addEventListener('pagehide',()=>idbFlush());
+  // 첨부 파일 보관 (최대 약 300MB, 오래 안 본 것부터 지움). 첨부는 잠긴 채로 보관돼요.
+  async function blobGet(id){if(!IDB.db)return null;try{const tx=IDB.db.transaction('blobs','readwrite'),st=tx.objectStore('blobs');const v=await idbReq(st.get(id));if(v){v.at=Date.now();st.put(v,id);return v.b;}}catch(e){}return null;}
+  async function blobPut(id,b){if(!IDB.db||!b||b.size>40*1024*1024)return;try{const tx=IDB.db.transaction(['blobs','meta'],'readwrite');tx.objectStore('blobs').put({b,at:Date.now(),n:b.size},id);
+      const m=tx.objectStore('meta');const tot=((await idbReq(m.get('blobBytes')))||0)+b.size;m.put(tot,'blobBytes');if(tot>300*1024*1024)setTimeout(blobTrim,2000);}catch(e){}}
+  async function blobTrim(){try{const tx=IDB.db.transaction(['blobs','meta'],'readwrite'),st=tx.objectStore('blobs');const ks=await idbReq(st.getAllKeys()),vs=await idbReq(st.getAll());const arr=ks.map((k,i)=>({k,at:vs[i].at||0,n:vs[i].n||0})).sort((a,b)=>a.at-b.at);let tot=arr.reduce((a,x)=>a+x.n,0);for(const x of arr){if(tot<200*1024*1024)break;st.delete(x.k);tot-=x.n;}tx.objectStore('meta').put(tot,'blobBytes');}catch(e){}}
   const subs=new Set();       // {coll,flt,key,cb,sig}
   function match(path,ent,coll,flt,key){
     if(key)return path===key;
@@ -199,8 +224,10 @@ function(e){return e.hasOwnProperty("authorization_endpoint")&&e.hasOwnProperty(
   async function fullItems(path0,ids){        // 바뀐 항목의 Data 가져오기 ($batch 20개씩)
     const out={};const L=lid(path0);
     for(let i=0;i<ids.length;i+=20){const part=ids.slice(i,i+20);
-      const r=await gx('POST','/$batch',{requests:part.map((id,j)=>({id:String(j),method:'GET',url:`/sites/${SITE}/lists/${L}/items/${id}?$expand=fields($select=Key,Data,Stamp)&$select=id,eTag,createdBy,lastModifiedBy`}))});
-      for(const x of r.responses||[]){if(x.status===200)out[x.body.id]=x.body;}}
+      let todo=part;for(let t=0;t<6&&todo.length;t++){
+        const r=await gx('POST','/$batch',{requests:todo.map((id,j)=>({id:String(j),method:'GET',url:`/sites/${SITE}/lists/${L}/items/${id}?$expand=fields($select=Key,Data,Stamp)&$select=id,eTag,createdBy,lastModifiedBy`}))});
+        const again=[];let ra=0;for(const x of r.responses||[]){if(x.status===200)out[x.body.id]=x.body;else if(x.status===429||x.status===503){again.push(todo[Number(x.id)]);ra=Math.max(ra,Number((x.headers||{})['Retry-After']||(x.headers||{})['retry-after'])||0);}}
+        if(again.length){RQ.pauseUntil=Math.max(RQ.pauseUntil,Date.now()+Math.min(120,ra||2**(t+1))*1000);}todo=again;}}
     return out;}
   async function partsOf(path,n){let s='';for(let i=0;i<n;i++){const r=await gx('GET',`${itemsUrl(path)}?$expand=fields($select=Key,Data)&$filter=${encodeURIComponent(`fields/Key eq '${qv(path+'#'+i)}'`)}`,undefined,PREFER);const it=(r.value||[])[0];if(!it)throw new Error('나눠 저장한 조각을 찾지 못했어요: '+path);s+=it.fields?.Data||'';}return s;}
   async function decode(path,it){let raw=it.fields?.Data;if(raw==null||raw==='')return null;let v=JSON.parse(raw);if(v&&v.__p){v=JSON.parse(await partsOf(path,v.__p));}return v;}
@@ -209,10 +236,12 @@ function(e){return e.hasOwnProperty("authorization_endpoint")&&e.hasOwnProperty(
     for(const it of idx){const p=it.fields?.Key;if(!p)continue;seen.add(p);const c=cache.get(p);const st=String(it.fields?.Stamp||'')+'|'+(it.eTag||'');if(!c||c.stamp!==st)need.push(it.id);}
     const full=need.length?await fullItems(path0,need):{};
     for(const it of idx){const p=it.fields?.Key;if(!p)continue;const f=full[it.id];if(!f)continue;
-      try{const data=await decode(p,f);cache.set(p,{id:it.id,etag:f.eTag,stamp:String(f.fields?.Stamp||'')+'|'+(it.eTag||''),data,ok:trusted(p,f),parts:(()=>{try{const v=JSON.parse(f.fields?.Data||'null');return v&&v.__p||0;}catch{return 0;}})()});}
+      try{const data=await decode(p,f);cache.set(p,{id:it.id,etag:f.eTag,stamp:String(f.fields?.Stamp||'')+'|'+(it.eTag||''),data,ok:trusted(p,f),parts:(()=>{try{const v=JSON.parse(f.fields?.Data||'null');return v&&v.__p||0;}catch{return 0;}})()});idbMark(p);}
       catch(e){console.error('읽기 실패',p,e);}}
     // 사라진 항목
-    for(const [p,ent] of [...cache]){if(seen.has(p))continue;if(key?p===key:match(p,ent,coll,flt))cache.delete(p);}
+    for(const [p,ent] of [...cache]){if(seen.has(p))continue;if(key?p===key:match(p,ent,coll,flt)){cache.delete(p);idbMark(p,true);}}
+    // 이미 받은 항목의 eTag만 바뀐 경우(내용 같음)도 표시 갱신
+    for(const it of idx){const p=it.fields?.Key;const c=p&&cache.get(p);if(c&&!full[it.id]&&it.eTag&&c.etag!==it.eTag&&c.stamp===String(it.fields?.Stamp||'')+'|'+(it.eTag||'')){c.etag=it.eTag;idbMark(p);}}
   }
   async function getOne(path){await refresh(path,null,null,path);return cache.get(path)||null;}
 
@@ -241,7 +270,7 @@ function(e){return e.hasOwnProperty("authorization_endpoint")&&e.hasOwnProperty(
     emitAll();}
   const merge=(a,b)=>{for(const k in b){if(b[k]&&typeof b[k]==='object'&&!Array.isArray(b[k])&&a[k]&&typeof a[k]==='object'&&!Array.isArray(a[k]))merge(a[k],b[k]);else a[k]=b[k];}return a;};
   async function update(path,partial){
-    for(let t=0;t<4;t++){const ent=await getOne(path);if(!ent||ent.data==null){const e=new Error('문서가 없어요');e.code='invalid_argument';throw e;}
+    for(let t=0;t<4;t++){const c0=cache.get(path);const ent=(t===0&&c0&&c0.ok&&c0.data!=null&&c0.etag&&!c0.parts)?c0:await getOne(path);if(!ent||ent.data==null){const e=new Error('문서가 없어요');e.code='invalid_argument';throw e;}
       const next=merge(JSON.parse(JSON.stringify(ent.data)),JSON.parse(JSON.stringify(partial)));
       try{await put(path,next,{ifMatch:ent.parts?undefined:ent.etag});return;}catch(e){if(e.status===412){await new Promise(r=>setTimeout(r,300+Math.random()*700));continue;}throw e;}}
     throw new Error('다른 사람이 동시에 고치고 있어요. 잠시 후 다시 해 주세요.');}
@@ -264,8 +293,15 @@ function(e){return e.hasOwnProperty("authorization_endpoint")&&e.hasOwnProperty(
     async set(d){await gx('PUT',`${keyPath}:/content`,new Blob([JSON.stringify(d)],{type:'application/json'}));}};
 
   /* ---------- db ---------- */
-  function poller(s){const run=async()=>{if(document.visibilityState==='hidden')return;try{await refresh(s.path0,s.coll,s.flt,s.key);emit(s);}catch(e){console.warn('새로 고침 실패',e);if(s.err&&e.code==='forbidden')s.err(e);}};
-    run().then(()=>emit(s,true));s.timer=setInterval(run,POLL);return ()=>{clearInterval(s.timer);subs.delete(s);};}
+  // 새로 고침은 한 줄로 차례차례 (동시에 몰려 SharePoint가 막지 않게)
+  const PQ={chain:Promise.resolve()};
+  function refreshSub(s){return PQ.chain=PQ.chain.then(async()=>{if(!subs.has(s))return;try{await refresh(s.path0,s.coll,s.flt,s.key);s.last=Date.now();emit(s);}catch(e){console.warn('새로 고침 실패',e);if(s.err&&e.code==='forbidden')s.err(e);}}).catch(()=>{});}
+  function poller(s){
+    // 이 PC에 저장된 목록이 있으면 먼저 보여 주고, 바뀐 것만 받아 온다
+    {const has=s.key?!!(cache.get(s.key)&&cache.get(s.key).ok):[...cache].some(([p,e])=>e.ok&&e.data!=null&&match(p,e,s.coll,s.flt));if(has)setTimeout(()=>emit(s,true),0);}
+    refreshSub(s).then(()=>emit(s,true));
+    s.timer=setInterval(()=>{if(document.visibilityState!=='hidden')refreshSub(s);},POLL+Math.floor(Math.random()*5000));
+    return ()=>{clearInterval(s.timer);subs.delete(s);};}
   function query(coll,flt=[]){return {
     where(f,op,v){return query(coll,[...flt,[f,op,v]]);},orderBy(){return this;},limit(){return this;},
     async get(){await refresh(coll+'/x',coll,flt,null);const docs=[];for(const [p,ent] of cache)if(ent.ok&&ent.data!=null&&match(p,ent,coll,flt))docs.push(snapDoc(p,ent));return {docs,size:docs.length,empty:!docs.length};},
@@ -282,7 +318,7 @@ function(e){return e.hasOwnProperty("authorization_endpoint")&&e.hasOwnProperty(
       onSnapshot(next,err){const s={path0:path,coll:null,flt:[],key:path,cb:next,err,sig:null};subs.add(s);return poller(s);},
       collection(c){return query(path+'/'+c);}};}
   const db={doc,collection:c=>query(c)};
-  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')for(const s of subs)refresh(s.path0,s.coll,s.flt,s.key).then(()=>emit(s)).catch(()=>{});});
+  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')for(const s of subs)if(Date.now()-(s.last||0)>30000)refreshSub(s);});
 
   /* ---------- 사용자 ---------- */
   const PROF={};
@@ -308,7 +344,9 @@ function(e){return e.hasOwnProperty("authorization_endpoint")&&e.hasOwnProperty(
       return {id:it.id,url:'',contentType:blob.type||'',sizeBytes:blob.size};},
     async delete(id){try{await gx('DELETE',`/sites/${SITE}/drive/items/${id}`);}catch(e){if(e.status!==404)throw e;}},
     async list(){return {assets:[],usage:{}};}};
-  async function blobFetch(id){
+  async function blobFetch(id){const kept=await blobGet(id);if(kept)return new Response(kept,{status:200,headers:{'content-type':kept.type||'application/octet-stream'}});
+    const r=await blobFetch0(id);const b=await r.blob();blobPut(id,b);return new Response(b,{status:200,headers:{'content-type':r.headers.get('content-type')||b.type||'application/octet-stream'}});}
+  async function blobFetch0(id){
     const it=await gx('GET',`/sites/${SITE}/drive/items/${id}`);const url=it['@microsoft.graph.downloadUrl'];
     if(url){try{const r=await fetch(url);if(r.ok)return r;}catch{}}
     const drv=it.parentReference?.driveId;const r=await fetch(drv?`${G}/drives/${drv}/items/${it.id}/content`:`${G}/sites/${SITE}/drive/items/${id}/content`,{headers:{Authorization:'Bearer '+await token()}});
@@ -346,7 +384,8 @@ function(e){return e.hasOwnProperty("authorization_endpoint")&&e.hasOwnProperty(
     if(!r){r=await fetch(`${G}/drives/${drive}/items/${id}/content`,{headers:{Authorization:'Bearer '+await token()}});if(!r.ok){const e=new Error('scan '+r.status);e.status=r.status;throw e;}}
     return SCANURL[k]=URL.createObjectURL(await r.blob());};
   window.__setAdmins=list=>{ADMINS=[...new Set([...SEED,...list.map(lower)])];};
-  window.__diag=()=>({me:ME,admins:ADMINS,site:SITE,lists:LIDS,cache:cache.size,subs:subs.size});
+  window.__diag=()=>({me:ME,admins:ADMINS,site:SITE,lists:LIDS,cache:cache.size,subs:subs.size,queue:RQ.wait.length,paused:Math.max(0,RQ.pauseUntil-Date.now())});
+  window.__clearLocal=async()=>{try{localStorage.removeItem('eaBoot:'+lower(ACC.username));IDB.db&&IDB.db.close();if(IDB.name)indexedDB.deleteDatabase(IDB.name);}catch(e){}};
   window.claude={async use(name){await ready;return {db,user,assets,downloads}[name]||null;}};
 
   /* ---------- 처음 설정 ---------- */
@@ -373,20 +412,29 @@ function(e){return e.hasOwnProperty("authorization_endpoint")&&e.hasOwnProperty(
     ACC=res?.account||MS.getActiveAccount()||MS.getAllAccounts()[0]||null;
     if(!ACC){gate('재단 전자결재','<p>재단 Microsoft 365 계정(@kohem.org)으로 로그인해 주세요.</p>',[['Microsoft 365로 로그인',()=>MS.loginRedirect({scopes:SCOPES})]]);return;}
     MS.setActiveAccount(ACC);
+    const boot=(()=>{try{return JSON.parse(localStorage.getItem('eaBoot:'+lower(ACC.username))||'null');}catch(e){return null;}})();
     try{
+      if(boot&&boot.site&&boot.me&&boot.lids&&boot.host===A.siteHost+A.sitePath){ME=boot.me;SITE=boot.site;LIDS=boot.lids;
+        // 저장해 둔 연결 정보로 바로 시작하고, 뒤에서 확인만 한다
+        setTimeout(()=>gx('GET',`/sites/${SITE}/lists?$select=id,displayName&$top=500`).then(ls=>{const L={};for(const l of ls.value)if(LNAMES.includes(l.displayName))L[l.displayName]=l.id;if(LNAMES.every(n=>L[n]))localStorage.setItem('eaBoot:'+lower(ACC.username),JSON.stringify({...boot,lids:L,at:Date.now()}));}).catch(()=>{}),20000);}
+      else{
       const me=await gx('GET','/me?$select=displayName,mail,userPrincipalName');
       ME={email:lower(me.mail||me.userPrincipalName),name:me.displayName||''};
       const site=await gx('GET',`/sites/${A.siteHost}:${A.sitePath}`);SITE=site.id;
       const ls=await gx('GET',`/sites/${SITE}/lists?$select=id,displayName&$top=500`);
       for(const l of ls.value)if(LNAMES.includes(l.displayName))LIDS[l.displayName]=l.id;
+      if(LNAMES.every(n=>LIDS[n]))try{localStorage.setItem('eaBoot:'+lower(ACC.username),JSON.stringify({me:ME,site:SITE,lids:LIDS,host:A.siteHost+A.sitePath,at:Date.now()}));}catch(e){}}
+      IDB.name='khf-ea:'+SITE.replace(/[^\w.-]/g,'_')+':'+ME.email;IDB.db=await idbOpen();const n=await idbLoad();if(n)console.info('이 PC에 저장된 목록',n,'건');
     }catch(e){console.error(e);
-      gate('SharePoint에 연결하지 못했어요',`<p class="err">${e.status===403||e.status===404?'재단 사이트에 접근 권한이 없어요. 관리자에게 사이트 구성원으로 추가해 달라고 요청해 주세요.':esc(e.message)}</p>`,[['다시 시도',()=>location.reload()],['다른 계정으로 로그인',()=>MS.logoutRedirect(),true]]);return;}
+      gate('SharePoint에 연결하지 못했어요',`<p class="err">${e.status===403||e.status===404?'재단 사이트에 접근 권한이 없어요. 관리자에게 사이트 구성원으로 추가해 달라고 요청해 주세요.':esc(e.message)}</p>`,[['다시 시도',()=>location.reload()],['다른 계정으로 로그인',()=>{try{localStorage.removeItem('eaBoot:'+lower(ACC.username));if(IDB.name)indexedDB.deleteDatabase(IDB.name);}catch(e){}MS.logoutRedirect();},true]]);return;}
     const missing=LNAMES.filter(n=>!LIDS[n]);
     if(missing.length){
       if(missing.length<LNAMES.length&&!missing.every(n=>n==='EA_Destroy'||n==='EA_Log')){gate('설정이 완전하지 않아요',`<p>전자결재 목록 일부(${missing.join(', ')})를 찾을 수 없어요. 관리자에게 SharePoint 목록 권한을 확인해 달라고 요청해 주세요.</p>`,[['다시 시도',()=>location.reload()]]);return;}
       if(missing.length===LNAMES.length){gate('처음 설정',`<p>전자결재 데이터를 담을 SharePoint 목록 ${LNAMES.length}개와 첨부 폴더를 만들고, 지금 계정(${esc(ME.email)})을 관리자로 지정해요. khf 사이트 <b>소유자</b> 계정으로 진행해 주세요.</p><p class="msgline"></p>`,[['목록 만들고 시작하기',b=>createLists(b)]]);return;}
     }
-    try{const c=await getOne('config/main');if(c&&c.data&&Array.isArray(c.data.admins))window.__setAdmins(c.data.admins);}catch(e){console.error(e);}
+    {const c0=cache.get('config/main');if(c0&&c0.data&&Array.isArray(c0.data.admins))window.__setAdmins(c0.data.admins);
+     const pc=getOne('config/main').then(c=>{if(c&&c.data&&Array.isArray(c.data.admins))window.__setAdmins(c.data.admins);}).catch(e=>console.error(e));
+     if(!c0)await pc;}
     hideGate();readyRes();
   })();
 })();
@@ -603,11 +651,11 @@ td.nw{white-space:nowrap;font-variant-numeric:tabular-nums}
 </div>
 <script>
 /* ================= 프로그램 버전 (고칠 때마다 올림) ================= */
-const APP_VER='2026.11.17 (v47)';
+const APP_VER='2026.11.17 (v48)';
 (function(){const put=()=>{const el=document.getElementById('appVer');if(el)el.textContent='버전 '+APP_VER;};put();document.addEventListener('DOMContentLoaded',put);
   // M365 버전: 서버에 새 버전이 올라왔는지 확인 (열 때 + 30분마다)
   // 새 버전이 올라와 있으면 '업데이트 중' 화면을 보여 주고 자동으로 새 버전을 연다 (작성 중인 글이 있으면 끝날 때까지 기다림)
-  const busy=()=>{try{return !!(window.S&&(S.edit||S.wkDirty||S.moDirty||S.inDirty||S.bulk));}catch(e){return false;}};
+  const busy=()=>{try{return !!(typeof S!=='undefined'&&(S.edit||S.wkDirty||S.moDirty||S.inDirty||S.bulk));}catch(e){return false;}};
   const tries=()=>{try{return JSON.parse(sessionStorage.getItem('eaUpd')||'{}');}catch(e){return {};}};
   const go=v=>{const tr=tries();if(tr.v===v&&tr.n>=2)return false;try{sessionStorage.setItem('eaUpd',JSON.stringify({v,n:(tr.v===v?tr.n:0)+1}));}catch(e){}
     let ov=document.getElementById('verUpd');if(!ov){ov=document.createElement('div');ov.id='verUpd';ov.style.cssText='position:fixed;inset:0;z-index:99;background:rgba(255,255,255,.96);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;font:15px/1.5 system-ui,sans-serif;color:#223';
@@ -906,14 +954,18 @@ function ingest(){if(ingesting){ingestAgain=true;return;}ingesting=(async()=>{co
 // 예전에 불러온 이관 문서에 목록 정보가 없으면 관리자 화면에서 한 번씩 채워 둔다
 let pubMigrating=false;
 async function pubMigrate(){if(pubMigrating||!S.isAdmin||S.readOnly||!K.priv)return;const need=Object.values(S.docs).filter(d=>d.imported&&!d._locked&&!d._lazy&&!d.deleted&&rawDocs[d.id]&&!rawDocs[d.id].pub);if(!need.length)return;
-  pubMigrating=true;S.bulk=true;try{for(const d of need){try{await writeDoc({...clone(d)},true);}catch(e){console.warn('목록 정보 정리',d.id,e);}}}finally{S.bulk=false;pubMigrating=false;render();}}
+  pubMigrating=true;S.bulk=true;try{for(const d of need){try{await writeDoc({...clone(d)},true);}catch(e){console.warn('목록 정보 정리',d.id,e);}if(window.__isM365)await new Promise(r=>setTimeout(r,500));}}finally{S.bulk=false;pubMigrating=false;render();}}
 const keySync=new Set();
-async function syncKeys(){if(S.readOnly||!S.ready.links||!K.priv)return;
-  for(const d of Object.values(S.docs)){const key=K.plain[d.id]?.key;if(!key)continue;
+// 열쇠 나눠 주기: 한 번에 몰아서 쓰지 않고 8건씩, 사이사이 쉬면서 (SharePoint 요청 제한)
+let keySyncRun=false,keySyncMore=null;
+async function syncKeys(){if(S.readOnly||!S.ready.links||!K.priv||keySyncRun)return;keySyncRun=true;let n=0;
+  try{for(const d of Object.values(S.docs)){const key=K.plain[d.id]?.key;if(!key)continue;
     const miss=recipients(d).filter(u=>S.links[u]?.pub&&(!d._keys[u]||d._kn[u]!==kn(S.links[u].pub)));if(!miss.length)continue;
     const tag=d.id+':'+miss.map(u=>u+kn(S.links[u].pub)).join();if(keySync.has(tag))continue;keySync.add(tag);
     const add={},addn={};for(const u of miss){const pk=await pubOf(u);if(pk){add[u]=b64(await crypto.subtle.wrapKey('raw',key,pk,RSA));addn[u]=kn(S.links[u].pub);}}
-    try{await serial('doc:'+d.id,()=>S.db.doc('docs/'+d.id).update({keys:add,kn:addn}));}catch(e){console.error(e);}}}
+    try{await serial('doc:'+d.id,()=>S.db.doc('docs/'+d.id).update({keys:add,kn:addn}));}catch(e){console.error(e);keySync.delete(tag);}
+    if(++n>=8){clearTimeout(keySyncMore);keySyncMore=setTimeout(syncKeys,window.__isM365?15000:1500);break;}
+    await new Promise(r=>setTimeout(r,window.__isM365?400:0));}}finally{keySyncRun=false;}}
 function writeDoc(d,keepTime){if(!keepTime)d.updatedAt=Date.now();return serial('doc:'+d.id,async()=>{
   if(!K.priv)throw new Error('암호 키가 준비되지 않았어요. 페이지를 새로 고쳐 주세요.');
   const s=await sealDoc(d);if(!Object.keys(s.out.keys).length)throw new Error('받을 사람의 키가 없어 저장하지 못했어요.');
