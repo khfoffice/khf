@@ -329,6 +329,18 @@ function(e){return e.hasOwnProperty("authorization_endpoint")&&e.hasOwnProperty(
     else{const ses=await gx('POST',`${p}:/createUploadSession`,{item:{'@microsoft.graph.conflictBehavior':'replace'}});const N=10*320*1024;
       for(let o=0;o<blob.size;o+=N){const end=Math.min(blob.size,o+N);const r=await fetch(ses.uploadUrl,{method:'PUT',headers:{'Content-Range':`bytes ${o}-${end-1}/${blob.size}`},body:blob.slice(o,end)});if(!r.ok&&r.status!==202)throw new Error('백업을 저장하지 못했어요 ('+r.status+')');}}
     return `OneDrive › 앱 › KHF-EA › Backup › ${yr}`;};
+  // 이전 문서 스캔본: SharePoint 폴더 링크로 파일 목록을 읽고, 볼 때마다 그 자리에서 내려받는다 (복사하지 않음)
+  window.__scanList=async link=>{await ready;const b64=btoa(unescape(encodeURIComponent(link.trim()))).replace(/=+$/,'').replace(/\//g,'_').replace(/\+/g,'-');
+    const it=await gx('GET',`/shares/u!${b64}/driveItem`);if(!it||!it.folder){const e=new Error('폴더 링크가 아니에요');e.status=400;throw e;}
+    const drive=it.parentReference?.driveId;const items=[];let url=`/drives/${drive}/items/${it.id}/children?$top=999&$select=id,name,size,file`;
+    while(url){const r=await gx('GET',url);for(const x of r.value||[])if(x.file)items.push({id:x.id,name:x.name,size:x.size});url=r['@odata.nextLink']||null;}
+    return {drive,folder:it.name,items};};
+  const SCANURL={};
+  window.__scanBlob=async(drive,id)=>{await ready;const k=drive+'/'+id;if(SCANURL[k])return SCANURL[k];
+    const it=await gx('GET',`/drives/${drive}/items/${id}`);let r=null;const u=it['@microsoft.graph.downloadUrl'];
+    if(u){try{r=await fetch(u);if(!r.ok)r=null;}catch{r=null;}}
+    if(!r){r=await fetch(`${G}/drives/${drive}/items/${id}/content`,{headers:{Authorization:'Bearer '+await token()}});if(!r.ok){const e=new Error('scan '+r.status);e.status=r.status;throw e;}}
+    return SCANURL[k]=URL.createObjectURL(await r.blob());};
   window.__setAdmins=list=>{ADMINS=[...new Set([...SEED,...list.map(lower)])];};
   window.__diag=()=>({me:ME,admins:ADMINS,site:SITE,lists:LIDS,cache:cache.size,subs:subs.size});
   window.claude={async use(name){await ready;return {db,user,assets,downloads}[name]||null;}};
@@ -587,7 +599,7 @@ td.nw{white-space:nowrap;font-variant-numeric:tabular-nums}
 </div>
 <script>
 /* ================= 프로그램 버전 (고칠 때마다 올림) ================= */
-const APP_VER='2026.11.16 (v40)';
+const APP_VER='2026.11.17 (v42)';
 (function(){const put=()=>{const el=document.getElementById('appVer');if(el)el.textContent='버전 '+APP_VER;};put();document.addEventListener('DOMContentLoaded',put);
   // M365 버전: 서버에 새 버전이 올라왔는지 확인 (열 때 + 30분마다)
   const chk=async()=>{if(!window.__isM365)return;try{const r=await fetch(location.pathname+'?v='+Date.now(),{cache:'no-store'});const tx=await r.text();const m=tx.match(/const APP_VER='([^']+)'/);
@@ -962,7 +974,7 @@ async function xlsxBuild(sheets){
   return wb.xlsx.writeBuffer();
 }
 async function xlsxSave(name,sheets){const buf=await xlsxBuild(sheets);return saveBlob(name,new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));}
-async function readSheet(file){const buf=await file.arrayBuffer();if(/\.(xlsx?|xlsm)$/i.test(file.name)){await lib('xlsx');const wb=XLSX.read(buf,{type:'array',cellDates:true});return XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,raw:false,dateNF:'yyyy-mm-dd',defval:''}).map(r=>r.map(c=>String(c).trim())).filter(r=>r.some(Boolean));}
+async function readSheet(file){const buf=await file.arrayBuffer();if(/\.(xlsx?|xlsm)$/i.test(file.name)){await lib('xlsx');const wb=XLSX.read(buf,{type:'array',cellDates:true,...(/\.xls$/i.test(file.name)?{codepage:949}:{})});return XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,raw:false,dateNF:'yyyy-mm-dd',defval:''}).map(r=>r.map(c=>String(c).trim())).filter(r=>r.some(Boolean));}
   let t;try{t=new TextDecoder('utf-8',{fatal:true}).decode(buf);}catch{t=new TextDecoder('euc-kr').decode(buf);}return textRows(t.replace(/^﻿/,''));}
 function splitCsv(line){const out=[];let cur='',q=false;for(let i=0;i<line.length;i++){const ch=line[i];if(q){if(ch==='"'){if(line[i+1]==='"'){cur+='"';i++;}else q=false;}else cur+=ch;}else if(ch==='"')q=true;else if(ch===','){out.push(cur);cur='';}else cur+=ch;}out.push(cur);return out;}
 function textRows(t){return t.replace(/\r/g,'').split('\n').filter(l=>l.trim()).map(l=>(l.includes('\t')?l.split('\t'):splitCsv(l)).map(c=>c.trim()));}
@@ -1295,6 +1307,7 @@ function render(force){
   EVC.clear();renderTabs();
   const who=$('who');const k=myKey();
   who.textContent=!S.me?'':k?`${nameK(k)} · ${R(k).pos||''}${R(k).team?' · '+R(k).team:''} · ${branchById(branchOfKey(k)).name}`:'명단과 연결되지 않았어요';
+  if(!force&&S.bulk)return;   // 대량 불러오기 중에는 화면을 매번 다시 그리지 않음
   if(!force&&(S.tab==='new'&&S.edit||S.tab==='weekly'&&S.wkDirty||S.tab==='monthly'&&S.moDirty||S.tab==='in'&&S.inDirty&&!S.open))return;
   const v=$('view');const y=window.scrollY;v.replaceChildren();
   if(!S.ready.cfg){v.append(h('section',{class:'panel'},h('p',{class:'muted'},'불러오는 중…')));return;}
@@ -1538,7 +1551,7 @@ function editor(){
 /* ---------- 문서 보기 ---------- */
 function docView(d){alogView(d);
   const e=ev(d),k=myKey(),isAuthor=d.authorUid===S.me||(k&&d.author===k);
-  const paper=paperOf(d);const pw=h('div',{class:'paper-wrap'},paper,attachView(d.files));
+  const paper=paperOf(d);const pw=h('div',{class:'paper-wrap'},paper,scanView(d),attachView(d.files));
   const side=h('div',{class:'side'});
   if((d.kind==='out'||d.kind==='in')&&(S.isAdmin||isAuthor)&&!d.imported)setTimeout(()=>side.append(h('section',{class:'panel'},h('h3',{style:'margin:0 0 6px'},'보존기간'),
     h('select',{disabled:S.readOnly,'aria-label':'보존기간',onchange:async e=>{try{await patchDoc(d.id,{keep:e.target.value});notice('보존기간을 바꿨어요.');setTimeout(()=>notice(''),2500);}catch(er){writeErr(er);}}},KEEP.map(x=>h('option',{value:x,selected:retainOf(d)===x},KEEP_LABEL[x]))),
@@ -1944,9 +1957,9 @@ function pptDialog(o){
 /* ---------- 문서대장 ---------- */
 const LCOLS={
   etc:[['지점',d=>branchById(d.branch).name],['제목',d=>d.title],['기안자',d=>authorName(d)],['기안일',d=>d.draftDate||''],['결재일',d=>docDate(d)],['전결권자',d=>finalName(d)],['파일',d=>(d.files||[]).length],['상태',d=>STATUS[ev(d).status]]],
-  in:[['접수번호',d=>noText(d)],['지점',d=>branchById(d.branch).name],['제목',d=>d.title],['원 문서번호',d=>d.origNo||''],['파일건수',d=>(d.files||[]).length||d.fileCount||0],['접수일자',d=>d.recvDate||''],['발송처',d=>d.sender||''],['회신요청',d=>d.replyNeed?'O':''],['답신공문번호',d=>replyNoOf(d)],['담당',d=>d.assignee?nameK(d.assignee):(d.assigneeName||'')]],
-  out:[['발신번호',d=>noText(d)],['지점',d=>branchById(d.branch).name],['제목',d=>d.title],['수신',d=>d.to||''],['시행일자',d=>docDate(d)],['기안자',d=>authorName(d)],['직인',d=>d.noSeal?'생략':''],['상태',d=>STATUS[ev(d).status]]],
-  gian:[['시행번호',d=>noText(d)],['지점',d=>branchById(d.branch).name],['제목',d=>d.title],['주무부서',d=>d.team||''],['기안자',d=>authorName(d)],['기안일',d=>d.draftDate||''],['시행일',d=>docDate(d)],['전결권자',d=>finalName(d)],['보존기간',d=>d.keep||''],['상태',d=>STATUS[ev(d).status]]],
+  in:[['접수번호',d=>noText(d)],['지점',d=>branchById(d.branch).name],['제목',d=>d.title],['원 문서번호',d=>d.origNo||''],['파일건수',d=>(d.files||[]).length||d.fileCount||0],['스캔',d=>scanCount(d)],['접수일자',d=>d.recvDate||''],['발송처',d=>d.sender||''],['회신요청',d=>d.replyNeed?'O':''],['답신공문번호',d=>replyNoOf(d)],['담당',d=>d.assignee?nameK(d.assignee):(d.assigneeName||'')]],
+  out:[['발신번호',d=>noText(d)],['지점',d=>branchById(d.branch).name],['제목',d=>d.title],['스캔',d=>scanCount(d)],['수신',d=>d.to||''],['시행일자',d=>docDate(d)],['기안자',d=>authorName(d)],['직인',d=>d.noSeal?'생략':''],['상태',d=>STATUS[ev(d).status]]],
+  gian:[['시행번호',d=>noText(d)],['지점',d=>branchById(d.branch).name],['제목',d=>d.title],['스캔',d=>scanCount(d)],['주무부서',d=>d.team||''],['기안자',d=>authorName(d)],['기안일',d=>d.draftDate||''],['시행일',d=>docDate(d)],['전결권자',d=>finalName(d)],['보존기간',d=>d.keep||''],['상태',d=>STATUS[ev(d).status]]],
   form:[['종류',d=>KINDS[d.kind].short],['제목',d=>d.title],['신청인',d=>authorName(d)],['금액',d=>amountOf(d)??''],['작성일',d=>d.draftDate||''],['결재일',d=>docDate(d)],['전결권자',d=>finalName(d)],['상태',d=>STATUS[ev(d).status]]],
   buy:[['구입번호',d=>noText(d)],['지점',d=>branchById(d.branch).name],['제목',d=>d.title],['거래처',d=>d.vendor||''],['금액(VAT포함)',d=>d.imported?(d.amount||''):buyTotalVat(d)],['신청인',d=>authorName(d)],['작성일',d=>d.draftDate||''],['결재일',d=>docDate(d)],['전결권자',d=>finalName(d)],['상태',d=>STATUS[ev(d).status]]]};
 const authorName=d=>d.imported?(d.authorName||''):nameK(d.author);
@@ -2029,16 +2042,83 @@ function viewLedger(v){
   v.append(h('section',{class:'panel'},
     h('div',{class:'seg',style:'max-width:620px;margin-bottom:12px'},[['in','수신'],['out','발신'],['gian','기안'],['buy','물품결의'],['form','신청서'],['etc','기타']].map(([k2,t])=>h('button',{type:'button','aria-pressed':kind===k2?'true':'false',onclick:()=>{S.sub.lk=k2;render(true);}},t))),
     h('div',{class:'row between'},h('div',{class:'row'},h('select',{id:'lb',onchange:e=>{S.sub.lb=e.target.value;render(true);}},h('option',{value:'all'},'전체 지점'),C().branches.map(b=>h('option',{value:b.id,selected:br===b.id},b.name))),yearSel('ly',yr,x=>{S.sub.ly=x;loadYear(x);render(true);}),qi),
-      h('div',{class:'row'},m,h('button',{class:'btn ghost sm',type:'button',onclick:()=>backupDialog(yr)},'백업 (zip)'),S.isAdmin&&kind!=='form'&&kind!=='etc'?h('button',{class:'btn ghost sm',type:'button',onclick:()=>importDialog(kind,yr)},'기존 대장 불러오기'):null,h('button',{class:'btn sm',type:'button',onclick:()=>xlsxSave(`${kind==='form'?'신청서':KINDS[kind].short}대장_${yr}.xlsx`,[{name:`${kind==='form'?'신청서':KINDS[kind].short}대장`,title:`${yr}년 ${kind==='form'?'신청서':KINDS[kind].label} 대장${br!=='all'?' · '+branchById(br).name:''}`,rows:[cols.map(c=>c[0]),...list.slice().reverse().map(d=>cols.map(([,f])=>f(d)))],cols:cols.map(([t])=>t==='제목'?44:0)}]).catch(er=>{console.error(er);m.textContent='엑셀을 만들지 못했어요.';m.className='msg err';})},'엑셀 내려받기')))));
+      h('div',{class:'row'},m,h('button',{class:'btn ghost sm',type:'button',onclick:()=>backupDialog(yr)},'백업 (zip)'),S.isAdmin&&kind!=='form'&&kind!=='etc'?h('button',{class:'btn ghost sm',type:'button',onclick:()=>importDialog(kind,yr)},'기존 대장 불러오기'):null,S.isAdmin&&['in','out','gian'].includes(kind)?h('button',{class:'btn ghost sm',type:'button',onclick:()=>scanDialog(kind,yr)},'스캔파일 연결'):null,h('button',{class:'btn sm',type:'button',onclick:()=>xlsxSave(`${kind==='form'?'신청서':KINDS[kind].short}대장_${yr}.xlsx`,[{name:`${kind==='form'?'신청서':KINDS[kind].short}대장`,title:`${yr}년 ${kind==='form'?'신청서':KINDS[kind].label} 대장${br!=='all'?' · '+branchById(br).name:''}`,rows:[cols.map(c=>c[0]),...list.slice().reverse().map(d=>cols.map(([,f])=>f(d)))],cols:cols.map(([t])=>t==='제목'?44:0)}]).catch(er=>{console.error(er);m.textContent='엑셀을 만들지 못했어요.';m.className='msg err';})},'엑셀 내려받기')))));
   v.append(h('section',{class:'panel'},h('p',{class:'small muted',style:'margin:0 0 8px'},`${list.length}건${S.isAdmin?' · 관리자는 모든 문서를 봐요':' · 내가 관련된 문서만 보여요'}`),list.length?h('div',{class:'tbl'},h('table',{class:'t'},h('tr',{},cols.map(([t])=>h('th',{},t))),list.map(d=>h('tr',{class:'click',onclick:()=>go('ledger',{open:d.id})},cols.map(([t,f])=>{const val=f(d);return h('td',{class:t==='제목'?'':(typeof val==='number'?'num':'nw')},typeof val==='number'&&t!=='파일건수'?won(val):val);}))))):h('p',{class:'empty'},'해당하는 문서가 없어요.')));
 }
 const loadedYears=new Set();
 async function loadYear(y){if(loadedYears.has(y)||!S.db||y>=new Date().getFullYear()-1)return;loadedYears.add(y);try{const snap=await S.db.collection('docs').where('yr','==',Number(y)).get();for(const x of snap.docs)rawDocs[x.id]=x.data();ingest();}catch(e){console.error(e);loadedYears.delete(y);}}
 
+/* ---------- 이전 문서 스캔파일 연결 ----------
+   파일 이름 규칙: 00 2025 001 00 001 .jpg = 기관코드(2) 연도(4) 번호(3) 가지번호(2) 쪽(3)
+   M365: SharePoint 스캔 폴더를 복사하지 않고 링크로 연결 (그 폴더 권한을 그대로 따름)
+   내 PC 파일: 다른 첨부처럼 잠가서 올림 */
+const SCAN_RE=/(\d{2})(\d{4})(\d{3})(\d{2})(\d{3})\.(jpe?g|png|gif|webp|bmp|pdf|tiff?)$/i;
+const isScanFile=n=>/\.(jpe?g|png|gif|webp|bmp|pdf|tiff?)$/i.test(String(n||''));
+function parseScanName(name){const s=String(name||'');const m=s.match(SCAN_RE);if(m)return {code:m[1],yr:+m[2],n:+m[3],sub:+m[4],page:+m[5]};
+  const no=parseNo(s);if(!no)return null;const pg=s.replace(/\.[^.]+$/,'').match(/[_\s(](\d{1,3})\)?$/);return {code:'',yr:no.yr,n:no.n,sub:no.sub,page:pg?+pg[1]:1};}
+const scanCount=d=>(d.scans||[]).length?`${d.scans.length}쪽`:'';
+function scanView(d){const sc=(d.scans||[]).slice().sort((a,b)=>(a.page||0)-(b.page||0));if(!sc.length)return null;
+  const box=h('div',{class:'attach-view'},h('h3',{style:'margin:0 0 8px'},`스캔본 ${sc.length}쪽`));
+  if(!window.__scanBlob){box.append(h('p',{class:'muted small'},'스캔본은 M365 버전(SharePoint)에서 볼 수 있어요.'));return box;}
+  alog('첨부 열람',d,{f:'스캔본'});
+  (async()=>{for(const x of sc){const card=h('div',{class:'att-card'},h('div',{class:'small muted',style:'margin-bottom:4px'},`${x.page||''}쪽 · ${x.name}`));box.append(card);
+    try{const u=await window.__scanBlob(x.drive,x.id);if(/\.pdf$/i.test(x.name)){const pages=h('div',{});card.append(pages);await renderPdf(await (await fetch(u)).blob(),pages);}
+      else card.append(h('img',{src:u,alt:x.name,style:'max-width:100%;display:block;margin:0 auto;background:#fff'}));}
+    catch(er){console.warn(er);card.append(h('p',{class:'muted small'},er&&er.status===403||er&&er.status===404?'이 스캔파일을 볼 권한이 없거나 파일이 옮겨졌어요. 스캔 문서 사이트 권한을 확인해 주세요.':'스캔파일을 불러오지 못했어요.'));}}})();
+  return box;}
+function scanDialog(kind,yr){
+  const st={items:[],codeBr:{},create:true,busy:false};
+  const body=h('div',{});const close=()=>{if(!st.busy)box.remove();};
+  const box=h('div',{class:'modal',onclick:e=>{if(e.target===box)close();}},h('div',{class:'modal-card',style:'max-width:680px'},h('div',{class:'row between',style:'margin-bottom:10px'},h('b',{},`${KINDS[kind].label} 스캔파일 연결`),h('button',{class:'btn ghost sm',onclick:close},'닫기')),body));
+  document.body.append(box);
+  const m=h('div',{class:'msg',role:'status'}),sum=h('div',{}),go2=h('button',{class:'btn',type:'button',disabled:true},'연결하기');
+  const groups=()=>{const g=new Map();for(const it of st.items){if(!it.p)continue;const br=st.codeBr[it.p.code]||'hq';const k=`${br}|${it.p.yr}|${it.p.n}|${it.p.sub}`;if(!g.has(k))g.set(k,{br,yr:it.p.yr,n:it.p.n,sub:it.p.sub,items:[]});g.get(k).items.push(it);}return [...g.values()].sort((a,b)=>a.yr-b.yr||a.n-b.n||a.sub-b.sub);};
+  const findDoc=gr=>Object.values(S.docs).find(x=>x.kind===kind&&!x.deleted&&x.branch===gr.br&&Number(x.yr)===gr.yr&&x.no&&x.no.n===gr.n&&(x.no.sub||0)===gr.sub);
+  const noLab=gr=>`${yy(gr.yr)}-${pad(gr.n,3)}${gr.sub?'-'+pad(gr.sub):''}`;
+  const draw=()=>{const gs=groups(),bad=st.items.filter(x=>!x.p),codes=[...new Set(st.items.filter(x=>x.p).map(x=>x.p.code))];
+    const hit=gs.filter(findDoc),miss=gs.filter(g=>!findDoc(g));
+    sum.replaceChildren(
+      codes.length?h('div',{class:'row',style:'margin:8px 0'},h('span',{class:'small'},'파일 이름 앞 기관코드 →'),codes.map(c=>h('label',{class:'row small',style:'gap:4px'},h('b',{},c||'(없음)'),h('select',{onchange:e=>{st.codeBr[c]=e.target.value;draw();}},C().branches.map(b=>h('option',{value:b.id,selected:(st.codeBr[c]||'hq')===b.id},b.name)))))):null,
+      h('p',{class:'small',style:'margin:6px 0'},`파일 ${st.items.length}개 → 문서 ${gs.length}건 (대장에 있는 문서 ${hit.length}건 · 대장에 없는 번호 ${miss.length}건)${bad.length?` · 이름을 읽지 못한 파일 ${bad.length}개`:''}`),
+      bad.length?h('p',{class:'small muted',style:'margin:0 0 6px'},'읽지 못한 파일: '+bad.slice(0,5).map(x=>x.name).join(', ')+(bad.length>5?' …':'')):null,
+      miss.length?h('label',{class:'row small',style:'gap:6px'},h('input',{type:'checkbox',checked:st.create,onchange:e=>{st.create=e.target.checked;}}),`대장에 없는 번호 ${miss.length}건도 이관 문서로 새로 만들기 (제목은 나중에 "기존 대장 불러오기"로 채울 수 있어요)`):null,
+      gs.length?h('div',{class:'tbl',style:'max-height:220px;overflow:auto;margin-top:6px'},h('table',{class:'t'},h('tr',{},['번호','지점','쪽수','대장'].map(x=>h('th',{},x))),gs.slice(0,200).map(g=>{const d=findDoc(g);return h('tr',{},h('td',{class:'nw'},noLab(g)),h('td',{},branchById(g.br).name),h('td',{class:'num'},g.items.length),h('td',{class:'small'},d?(d.title||'(제목 없음)'):h('span',{class:'muted'},'없음')));}))):null);
+    go2.disabled=!gs.length||st.busy;};
+  const setItems=list=>{st.items=list.filter(x=>isScanFile(x.name)).map(x=>({...x,p:parseScanName(x.name)}));for(const it of st.items)if(it.p&&!(it.p.code in st.codeBr))st.codeBr[it.p.code]=({'01':branchOfName('광주'),'02':branchOfName('부산')})[it.p.code]||'hq';
+    const ys=[...new Set(st.items.filter(x=>x.p).map(x=>x.p.yr))];Promise.all(ys.map(y=>loadYear(y))).then(()=>setTimeout(draw,800));draw();};
+  const link=h('input',{type:'url',placeholder:'SharePoint 스캔 폴더의 "링크 복사" 주소를 붙여 넣으세요',style:'flex:1;min-width:260px'});
+  go2.onclick=async()=>{st.busy=true;go2.disabled=true;let ok=0,made=0,skip=0;const gs=groups();S.bulk=true;
+    try{for(const [i,g] of gs.entries()){m.textContent=`${i+1}/${gs.length} · ${noLab(g)} 연결 중…`;m.className='msg';
+        const pages=g.items.slice().sort((a,b)=>a.p.page-b.p.page);let d=findDoc(g);
+        if(!d){if(!st.create||usedNos(kind,g.br,g.yr).has(`${g.n}-${g.sub}`)){skip++;continue;}
+          d={id:uid36(),kind,imported:true,branch:g.br,yr:g.yr,no:{n:g.n,sub:g.sub},title:'',date:'',draftDate:'',recvDate:'',state:'done',createdAt:Date.now(),files:[],scans:[]};
+          if(pages[0].ref)d.scans=pages.map(x=>({...x.ref,name:x.name,page:x.p.page}));else d.files=await uploadFiles(pages.map(x=>x.file),m);
+          await writeDoc(d,true);await noSlot(d,d.no);made++;continue;}
+        if(pages[0].ref){const have=new Set((d.scans||[]).map(x=>x.id));const add=pages.filter(x=>!have.has(x.ref.id)).map(x=>({...x.ref,name:x.name,page:x.p.page}));if(!add.length){ok++;continue;}
+          await patchDoc(d.id,{scans:[...(d.scans||[]),...add].sort((a,b)=>(a.page||0)-(b.page||0))});}
+        else{const have=new Set((d.files||[]).map(x=>x.name));const fl=pages.filter(x=>!have.has(x.name)).map(x=>x.file);if(fl.length){const up=await uploadFiles(fl,m);await patchDoc(d.id,{files:[...(d.files||[]),...up]});}}
+        ok++;}
+      m.textContent=`대장 문서 ${ok}건에 연결하고, 새 이관 문서 ${made}건을 만들었어요${skip?` (${skip}건은 건너뜀)`:''}.`;m.className='msg good';alog('권한 변경',null,{x:`${KINDS[kind].label} 스캔파일 연결 ${ok+made}건`});}
+    catch(er){console.error(er);writeErr(er,m);}
+    finally{st.busy=false;S.bulk=false;draw();render(true);}};
+  body.append(h('p',{class:'small muted',style:'margin-top:0'},'스캔파일 이름의 번호로 대장 문서를 찾아 붙여요. 이름 규칙: 00 2025 001 00 001.jpg = 기관코드(2자리) · 연도(4) · 문서번호(3) · 가지번호(2) · 쪽(3). "26-001_1.pdf"처럼 번호가 들어간 이름도 읽어요. 목록(제목)을 먼저 "기존 대장 불러오기"로 넣은 뒤 연결하면 제목과 함께 보여요.'),
+    window.__scanList?h('div',{},h('div',{class:'small',style:'font-weight:600;margin:4px 0'},'방법 1. SharePoint 스캔 폴더 연결 (권장 · 파일을 복사하지 않아요)'),
+      h('div',{class:'row'},link,h('button',{class:'btn ghost sm',type:'button',onclick:async ev2=>{const u=link.value.trim();if(!/^https:\/\//.test(u)){m.textContent='폴더 링크를 붙여 넣어 주세요.';m.className='msg err';return;}
+        ev2.target.disabled=true;m.textContent='폴더를 읽는 중…';m.className='msg';try{const r=await window.__scanList(u);setItems(r.items.map(x=>({name:x.name,ref:{drive:r.drive,id:x.id}})));m.textContent=`"${r.folder}" 폴더에서 파일 ${r.items.length}개를 읽었어요.`;}catch(er){console.error(er);m.textContent=er&&(er.status===403||er.status===404)?'폴더를 열 수 없어요. 링크와 권한(스캔 문서 사이트 구성원인지)을 확인해 주세요.':'폴더를 읽지 못했어요. "링크 복사"로 받은 폴더 주소인지 확인해 주세요.';m.className='msg err';}finally{ev2.target.disabled=false;}}},'폴더 읽기')),
+      h('p',{class:'small muted',style:'margin:4px 0 8px'},'OneDrive/SharePoint에서 2025 › 기안 같은 폴더를 열고 위쪽 "링크 복사"를 누른 주소예요. 스캔본은 그 사이트 권한이 있는 사람만 볼 수 있어요.')):null,
+    h('div',{class:'small',style:'font-weight:600;margin:4px 0'},window.__scanList?'방법 2. 내 PC의 스캔파일 올리기':'내 PC의 스캔파일 올리기'),
+    h('div',{class:'row'},h('label',{class:'btn ghost sm',style:'cursor:pointer'},'파일 고르기 (여러 개)',h('input',{type:'file',multiple:true,accept:'image/*,.pdf,.tif,.tiff',hidden:true,onchange:e=>{const l=[...e.target.files];e.target.value='';setItems(l.map(f=>({name:f.name,file:f})));m.textContent=`파일 ${l.length}개를 골랐어요.`;m.className='msg';}})),h('span',{class:'small muted'},'잠가서 저장돼요 (개당 14MB까지)')),
+    sum,h('div',{class:'row between',style:'margin-top:10px'},m,go2));
+}
 /* ---------- 기존 대장 불러오기 ---------- */
-const IMPF=[['no',['접수번호','시행번호','구입번호','발신번호','문서번호','번호']],['origNo',['원문서번호','문서번호']],['title',['제목','건명','품명']],['branch',['지점']],['fileCount',['파일건수']],['date',['접수일자','시행일자','시행일','발송일','기안일','작성일','결재일','일자']],['sender',['발송처','발신처']],['to',['수신','수신처']],['replyNeed',['회신요청']],['replyNo',['답신공문번호','답신번호']],['authorName',['기안자','작성자','신청인','담당자','담당']],['amount',['금액','합계','구입액']],['vendor',['거래처','구입처']],['team',['주무부서','부서']]];
+const IMPF=[['no',['접수번호','시행번호','구입번호','발신번호','문서번호','번호']],['origNo',['원문서번호','문서번호']],['title',['제목','건명','품명']],['branch',['지점']],['fileCount',['파일건수']],['date',['접수일자','시행일자','시행일','발송일','기안일','작성일','결재일','일자']],['sender',['발송처','발신처']],['to',['수신','수신처']],['replyNeed',['회신요청']],['replyNo',['답신공문번호','답신번호','회신접수번호']],['authorName',['기안자','작성자','신청인','담당자','담당','접수자']],['note',['비고']],['amount',['금액','합계','구입액']],['vendor',['거래처','구입처']],['team',['주무부서','부서']]];
+const LEGACY_NO=[/^gian_?no([123])$/i,/^jebsuno([123])$/i,/^bal_?no([123])$/i,/^(?:gumae|buy|mul)_?no([123])$/i,/^no([123])$/i];
+function legacyNoCols(head){for(const re of LEGACY_NO){const c={};head.forEach((x,i)=>{const m=String(x).trim().match(re);if(m)c[m[1]]=i;});if(c[1]!=null&&c[2]!=null)return c;}return null;}
+const BR_ALIAS={'본원':'hq','본부':'hq','재단':'hq','사무국':'hq'};
+function branchOfName(bn){const s=squash(bn);if(!s)return null;if(BR_ALIAS[s]&&C().branches.some(b=>b.id===BR_ALIAS[s]))return BR_ALIAS[s];const b=C().branches.find(x=>squash(x.name)===s||squash(x.name).includes(s)||s.includes(squash(x.name)));return b?b.id:null;}
 function mapHeader(head){const used=new Set(),map={};const hs=head.map(x=>squash(x));
-  for(const [f,names] of IMPF){for(const n of names){const i=hs.findIndex((x,j)=>!used.has(j)&&x===n);if(i>=0){map[f]=i;used.add(i);break;}}}
+  const lg=legacyNoCols(head);if(lg){map.no=-1;map.lg=lg;Object.values(lg).forEach(i=>used.add(i));}
+  for(const [f,names] of IMPF){if(map[f]!=null)continue;for(const n of names){const i=hs.findIndex((x,j)=>!used.has(j)&&x===n);if(i>=0){map[f]=i;used.add(i);break;}}}
   return map;}
 function parseNo(s,fallbackYr){s=String(s||'');const m=s.match(/(\d{2,4})\s*-\s*(\d{1,4})(?:\s*-\s*(\d{1,3}))?/);if(!m)return null;let y=+m[1];if(y<100)y+=2000;return {yr:y,n:+m[2],sub:+(m[3]||0)};}
 function importDialog(kind,yr){
@@ -2047,22 +2127,27 @@ function importDialog(kind,yr){
   document.body.append(box);
   let parsed=[];const m=h('div',{class:'msg'}),prev=h('div',{class:'tbl'}),go2=h('button',{class:'btn',type:'button',disabled:true},'불러오기');
   const defBr=h('select',{},C().branches.map(b=>h('option',{value:b.id},b.name)));
-  const handle=rows=>{if(!rows.length){m.textContent='읽을 내용이 없어요.';m.className='msg err';return;}
-    const hi=rows.findIndex(r=>r.some(c=>/번호/.test(c))&&r.some(c=>/제\s*목|품\s*명/.test(c)));if(hi<0){m.textContent='제목 줄(문서번호, 제목 …)을 찾지 못했어요. 첫 줄에 열 이름이 있어야 해요.';m.className='msg err';return;}
+  const bwSel=h('select',{'aria-label':'본원은 어느 기관'},C().branches.map(b=>h('option',{value:b.id,selected:b.id==='hq'},b.name)));
+  const handle=(rows,acc)=>{if(!rows.length){m.textContent='읽을 내용이 없어요.';m.className='msg err';return;}
+    const hi=rows.findIndex(r=>r.some(c=>/번호|_?no1$|jebsuno1/i.test(c))&&r.some(c=>/제\s*목|품\s*명/.test(c)));if(hi<0){m.textContent='제목 줄(문서번호, 제목 …)을 찾지 못했어요. 첫 줄에 열 이름이 있어야 해요.';m.className='msg err';return;}
     const map=mapHeader(rows[hi]);if(map.no==null||map.title==null){m.textContent='번호 열과 제목 열이 필요해요.';m.className='msg err';return;}
-    parsed=rows.slice(hi+1).map(r=>{const g=f=>map[f]!=null?String(r[map[f]]||'').trim():'';const no=parseNo(g('no'));if(!no||!g('title'))return null;
-      const bn=g('branch');const b=C().branches.find(x=>squash(x.name)===squash(bn)||(squash(bn)&&squash(x.name).includes(squash(bn))));
-      return {no,title:g('title'),branch:b?b.id:null,origNo:g('origNo'),fileCount:Number(g('fileCount'))||0,date:normDate(g('date')),sender:g('sender'),to:g('to'),replyNeed:/^(y|o|1|true|예|✓|v|○)$/i.test(g('replyNeed')),replyNo:g('replyNo'),authorName:g('authorName'),amount:Number(g('amount').replace(/[^\d.]/g,''))||0,vendor:g('vendor'),team:g('team')};}).filter(Boolean);
+    const lg=map.lg;
+    const more=rows.slice(hi+1).map(r=>{const g=f=>map[f]!=null&&map[f]>=0?String(r[map[f]]??'').trim():'';const no=lg?parseNo(`${String(r[lg[1]]??'').trim()}-${String(r[lg[2]]??'').trim()}${lg[3]!=null?'-'+(String(r[lg[3]]??'').trim()||'0'):''}`):parseNo(g('no'));if(!no||!g('title'))return null;
+      return {no,title:g('title'),branch:squash(g('branch'))==='본원'?'@bw':branchOfName(g('branch')),note:g('note'),origNo:g('origNo'),fileCount:Number(g('fileCount'))||0,date:normDate(g('date')),sender:g('sender'),to:g('to'),replyNeed:/^(y|o|1|true|예|✓|v|○)$/i.test(g('replyNeed')),replyNo:g('replyNo'),authorName:g('authorName'),amount:Number(g('amount').replace(/[^\d.]/g,''))||0,vendor:g('vendor'),team:g('team')};}).filter(Boolean);
+    parsed=[...(acc?parsed:[]),...more];
     const seen=new Set();parsed.forEach(p=>{p.dup=false;});
-    prev.replaceChildren(h('table',{class:'t'},h('tr',{},['번호','제목','지점','일자','발송처/수신'].map(t=>h('th',{},t))),parsed.slice(0,8).map(p=>h('tr',{},h('td',{class:'nw'},`${yy(p.no.yr)}-${pad(p.no.n,3)}${p.no.sub?'-'+pad(p.no.sub):''}`),h('td',{},p.title),h('td',{},p.branch?branchById(p.branch).name:'(기본)'),h('td',{class:'nw'},p.date),h('td',{},p.sender||p.to)))));
+    prev.replaceChildren(h('p',{class:'small',style:'margin:6px 0'},Object.entries(parsed.reduce((o,p)=>{const k=p.branch==='@bw'?'본원':p.branch?branchById(p.branch).name:'(기본 지점)';o[k]=(o[k]||0)+1;return o;},{})).map(([k,n])=>`${k} ${n}건`).join(' · ')),h('table',{class:'t'},h('tr',{},['번호','제목','지점','일자','발송처/수신'].map(t=>h('th',{},t))),parsed.slice(0,8).map(p=>h('tr',{},h('td',{class:'nw'},`${yy(p.no.yr)}-${pad(p.no.n,3)}${p.no.sub?'-'+pad(p.no.sub):''}`),h('td',{},p.title),h('td',{},p.branch==='@bw'?'본원':p.branch?branchById(p.branch).name:'(기본)'),h('td',{class:'nw'},p.date),h('td',{},p.sender||p.to)))));
     m.textContent=`${parsed.length}건을 읽었어요${parsed.length>8?' (앞 8건만 보여요)':''}. 이미 같은 번호가 있는 문서는 건너뛰어요.`;m.className='msg';go2.disabled=!parsed.length;};
-  go2.onclick=async()=>{go2.disabled=true;let ok=0,skip=0;
-    for(const p of parsed){const branch=p.branch||defBr.value;if(usedNos(kind,branch,p.no.yr).has(`${p.no.n}-${p.no.sub}`)){skip++;continue;}
-      const d={id:uid36(),kind,imported:true,branch,yr:p.no.yr,no:{n:p.no.n,sub:p.no.sub},title:p.title,origNo:p.origNo,fileCount:p.fileCount,recvDate:kind==='in'?p.date:'',date:p.date,draftDate:kind==='in'?'':p.date,sender:p.sender,to:p.to,replyNeed:p.replyNeed,replyNo:p.replyNo,authorName:p.authorName,amount:p.amount,vendor:p.vendor,team:p.team,state:'done',createdAt:Date.now(),files:[]};
+  go2.onclick=async()=>{go2.disabled=true;let ok=0,skip=0;S.bulk=true;try{
+    for(const p of parsed){const branch=p.branch==='@bw'?bwSel.value:(p.branch||defBr.value);
+      const ex=Object.values(S.docs).find(x=>x.kind===kind&&!x.deleted&&x.imported&&!String(x.title||'').trim()&&x.branch===branch&&Number(x.yr)===p.no.yr&&x.no&&x.no.n===p.no.n&&(x.no.sub||0)===p.no.sub);
+      if(ex){try{await patchDoc(ex.id,{title:p.title,origNo:p.origNo,fileCount:p.fileCount,recvDate:kind==='in'?p.date:'',date:p.date,draftDate:kind==='in'?'':p.date,sender:p.sender,to:p.to,replyNeed:p.replyNeed,replyNo:p.replyNo,authorName:p.authorName,amount:p.amount,vendor:p.vendor,team:p.team,...(p.note?(kind==='in'?{memo:p.note}:{body:p.note}):{})});ok++;}catch(e){writeErr(e,m);break;}continue;}
+      if(usedNos(kind,branch,p.no.yr).has(`${p.no.n}-${p.no.sub}`)){skip++;continue;}
+      const d={id:uid36(),kind,imported:true,branch,yr:p.no.yr,no:{n:p.no.n,sub:p.no.sub},title:p.title,origNo:p.origNo,fileCount:p.fileCount,recvDate:kind==='in'?p.date:'',date:p.date,draftDate:kind==='in'?'':p.date,sender:p.sender,to:p.to,replyNeed:p.replyNeed,replyNo:p.replyNo,authorName:p.authorName,amount:p.amount,vendor:p.vendor,team:p.team,state:'done',createdAt:Date.now(),files:[],...(p.note?(kind==='in'?{memo:p.note}:{body:p.note}):{})};
       try{await writeDoc(d,true);await noSlot(d,d.no);ok++;m.textContent=`${ok}건 저장 중…`;}catch(e){writeErr(e,m);break;}}
-    m.textContent=`${ok}건을 불러왔어요${skip?`, 번호가 겹친 ${skip}건은 건너뛰었어요`:''}.`;m.className='msg good';render(true);};
-  body.append(h('p',{class:'small muted',style:'margin-top:0'},'기존 프로그램에서 엑셀로 내보낸 목록을 고르세요. 첫 줄의 열 이름(문서번호, 지점, 제목, 문서번호, 파일건수, 접수일자, 발송처, 회신요청, 답신공문번호 …)을 보고 자동으로 맞춰요. 번호는 2026-001-00, 26-001, 제26-001호 모두 읽어요.'),
-    h('div',{class:'row'},h('label',{class:'btn ghost sm',style:'cursor:pointer'},'파일 고르기 (xlsx·xls·csv)',h('input',{type:'file',accept:'.xlsx,.xls,.csv,.txt',hidden:true,onchange:async e=>{const f=e.target.files[0];e.target.value='';if(!f)return;try{handle(await readSheet(f));}catch(er){console.error(er);m.textContent='파일을 읽지 못했어요.';m.className='msg err';}}})),h('span',{class:'small'},'지점 칸이 없으면'),defBr),
+    m.textContent=`${ok}건을 불러왔어요${skip?`, 번호가 겹친 ${skip}건은 건너뛰었어요`:''}.`;m.className='msg good';}finally{S.bulk=false;render(true);}};
+  body.append(h('p',{class:'small muted',style:'margin-top:0'},'기존 프로그램에서 엑셀로 내보낸 목록을 고르세요(지점별 파일 여러 개를 한 번에 골라도 돼요. 예전 문서관리 프로그램의 .xls도 그대로 읽어요). 첫 줄의 열 이름(문서번호, 지점, 제목, 문서번호, 파일건수, 접수일자, 발송처, 회신요청, 답신공문번호 …)을 보고 자동으로 맞춰요. 번호는 2026-001-00, 26-001, 제26-001호 모두 읽어요.'),
+    h('div',{class:'row'},h('label',{class:'btn ghost sm',style:'cursor:pointer'},'파일 고르기 (xlsx·xls·csv, 여러 개 가능)',h('input',{type:'file',multiple:true,accept:'.xlsx,.xls,.csv,.txt',hidden:true,onchange:async e=>{const fs=[...e.target.files];e.target.value='';if(!fs.length)return;parsed=[];for(const [i,f] of fs.entries()){try{handle(await readSheet(f),i>0);}catch(er){console.error(er);m.textContent=`${f.name}을(를) 읽지 못했어요.`;m.className='msg err';return;}}if(fs.length>1)m.textContent=`파일 ${fs.length}개에서 `+m.textContent;}})),h('span',{class:'small'},'지점 칸이 없으면'),defBr,h('span',{class:'small'},'"본원"은'),bwSel),
     h('textarea',{rows:4,placeholder:'또는 엑셀에서 제목 줄까지 복사해 여기에 붙여 넣기',style:'margin-top:8px',oninput:e=>handle(textRows(e.target.value))}),m,prev,h('div',{class:'row',style:'justify-content:flex-end;margin-top:8px'},go2));
 }
 
