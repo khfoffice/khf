@@ -546,6 +546,7 @@ button.file{font:inherit;font-size:12.5px;cursor:pointer}
             <label class="f" style="grid-column:auto">관리자 메일 (쉼표로 구분, 사이트 소유자여야 저장 가능) <input type="text" id="sAdmins" placeholder="thgu@kohem.org"></label>
             <label class="f" style="grid-column:auto">결재 지연 알림 기준 (올라온 뒤 며칠) <input type="number" id="sRemind" min="1" max="14" step="1"></label>
             <label class="f" style="grid-column:auto">1일 근무시간 <input type="number" id="sHpd" min="1" max="12" step="1"></label>
+            <label class="f" style="grid-column:auto">토요 근무 (팀·국:주차:시간, 여러 개는 ;) <input type="text" id="sSat" placeholder="광주의원:2,4:4; 부산의원:2,4:4"></label>
             <div>
               <div class="small muted" style="font-weight:500;margin-bottom:6px">결재에 참여하는 단계</div>
               <div class="chk" id="sChain"></div>
@@ -624,7 +625,7 @@ button.file{font:inherit;font-size:12.5px;cursor:pointer}
       </section>
     </div>
   </div>
-<div class="muted small" style="text-align:center;margin-top:24px">프로그램 버전 2026.11.06-5</div>
+<div class="muted small" style="text-align:center;margin-top:24px">프로그램 버전 2026.11.16-1</div>
 </div>
 <script>
 /* ===== 재단 Microsoft 365 연결 정보 ===== */
@@ -1116,6 +1117,18 @@ function holidayName(s){
 const isWeekend=s=>{const w=parse(s).getDay();return w===0||w===6;};
 const isOff=s=>isWeekend(s)||!!holidayName(s);
 function workdays(a,b){let n=0;for(let s=a;s<=b;s=addDays(s,1)) if(!isOff(s)) n++;return n;}
+/* 의원 토요 근무: 정해진 주차 토요일은 그 팀·국 직원에게 근무일(오전) */
+const SAT_DEFAULT=[{match:'광주의원',weeks:[2,4],hours:4},{match:'부산의원',weeks:[2,4],hours:4}];
+const SAT_RULES=()=>Array.isArray(C().satWork)?C().satWork:SAT_DEFAULT;
+function satHoursFor(u,s){
+  const d=parse(s); if(d.getDay()!==6||holidayName(s)) return 0;
+  const nth=Math.ceil(d.getDate()/7), p=u?P(u):{};
+  for(const r of SAT_RULES()) if((p.team===r.match||p.bureau===r.match)&&(r.weeks||[]).includes(nth)) return Number(r.hours)||HPD()/2;
+  return 0;
+}
+const workHoursOn=(u,s)=>isOff(s)?satHoursFor(u,s):HPD();
+const isOffFor=(u,s)=>!workHoursOn(u,s);
+const workHoursSum=(u,a,b)=>{let t=0;for(let s=a;s<=b;s=addDays(s,1))t+=workHoursOn(u,s);return t;};
 const holidayDataMissing=y=>!LUNAR[y];
 
 /* ---------- 회계연도·연차 계산 ---------- */
@@ -1256,7 +1269,7 @@ function allRequests(){
 function hoursOn(r,s){
   if(TYPES[r.type]?.grant) return 0;
   if(s<r.start||s>(r.end||r.start)) return 0;
-  if(r.unit==='day') return isOff(s)?0:HPD();
+  if(r.unit==='day') return workHoursOn(r.uid,s);
   return r.start===s?r.hours:0;
 }
 function pool(u,fy,kind){
@@ -1543,9 +1556,9 @@ function formState(){
   const start=$('fStart').value; let end=unit==='day'?$('fEnd').value:start;
   let hours=0, info='';
   if(start&&end&&end>=start){
-    if(unit==='day'){const n=workdays(start,end);hours=n*hpd;const off=dayDiff(start,end)+1-n;info=`근무일 ${n}일`+(off?` (주말·공휴일 ${off}일 제외)`:'');}
+    if(unit==='day'){let n=0,sat=0;for(let s=start;s<=end;s=addDays(s,1)){const w=workHoursOn(S.me,s);if(w){n++;hours+=w;if(isOff(s))sat++;}}const off=dayDiff(start,end)+1-n;info=`근무일 ${n}일`+(sat?` (토요 오전근무 ${sat}일 포함)`:'')+(off?` (주말·공휴일 ${off}일 제외)`:'');}
     else if(unit==='hour'){hours=Number($('fHours').value);info=`${$('fTime').value}부터 ${hours}시간`;}
-    else{hours=hpd/2;info=UNITS[unit];}
+    else{hours=isOff(start)?Math.min(hpd/2,satHoursFor(S.me,start)):hpd/2;info=UNITS[unit]+(isOff(start)&&hours?' (토요 근무)':'');}
   }
   return {type,unit,start,end,hours,info,time:unit==='hour'?$('fTime').value:null,reason:$('fReason').value.trim()};
 }
@@ -1557,7 +1570,7 @@ function updateSummary(){
   $('wHours').classList.toggle('hidden',f.unit!=='hour');
   if(!S.me) return;
   const parts=[];
-  if(f.start&&f.unit!=='day'&&isOff(f.start)) parts.push(h('span',{style:'color:var(--bad)'},'고른 날이 휴일이에요'));
+  if(f.start&&f.unit!=='day'&&isOffFor(S.me,f.start)) parts.push(h('span',{style:'color:var(--bad)'},'고른 날이 휴일이에요'));
   else if(f.hours) parts.push(h('span',{},f.info,' · ',h('b',{},fmtH(f.hours))));
   const ch=chainFor(S.me);
   parts.push(h('span',{},'  결재선 ',h('b',{},ch.length?ch.map(stepLabel).join(' › '):'없음 (바로 승인)')));
@@ -1568,13 +1581,15 @@ function validate(f){
   if(f.unit==='day'&&(!f.end||f.end<f.start)) return '종료일이 시작일보다 앞서요.';
   if(fyOf(f.start)!==fyOf(f.end)) return '회계연도가 바뀌는 기간은 나눠서 신청해 주세요.';
   if(holidayDataMissing(Number(f.start.slice(0,4)))) return `${f.start.slice(0,4)}년 공휴일 정보가 없어요. 관리자에게 문의해 주세요.`;
-  if(f.unit!=='day'&&isOff(f.start)) return '주말이나 공휴일은 신청할 필요가 없어요.';
+  if(f.unit!=='day'&&isOffFor(S.me,f.start)) return '주말이나 공휴일은 신청할 필요가 없어요.';
+  if(f.unit==='pm'&&isOff(f.start)) return '토요일은 오전 근무만 있어요. 오전 반일이나 종일로 신청해 주세요.';
+  if(f.unit==='hour'&&isOff(f.start)&&f.hours>satHoursFor(S.me,f.start)) return `토요일 근무시간(${satHoursFor(S.me,f.start)}시간)보다 많아요.`;
   if(!(f.hours>0)) return '기간에 근무일이 없어요.';
   const hpd=HPD();
   if(f.unit==='hour'){const [hh]=f.time.split(':').map(Number);if(hh+f.hours>9+hpd+1)return '퇴근 시각을 넘겨요. 시간을 줄여 주세요.';}
   const mine=reqsOf(S.me).filter(r=>ev(r).status!=='rejected');
   for(let s=f.start;s<=f.end;s=addDays(s,1)){
-    if(isOff(s)) continue;
+    if(isOffFor(S.me,s)) continue;
     const used=mine.reduce((a,r)=>a+hoursOn(r,s),0), add=f.unit==='day'?hpd:f.hours;
     if(used+add>hpd) return `${fmtD(s)}에 이미 신청한 휴가와 겹쳐요.`;
   }
@@ -1916,7 +1931,7 @@ function renderWeek(){
     for(const x of groups.get(t)){
       const tr=h('tr',{},h('td',{class:'nm'},x.name,h('small',{},x.pos)));
       for(const s of days){
-        const td=h('td',{class:isOff(s)?'offd':''});
+        const td=h('td',{class:isOffFor(x.u,s)?'offd':'',title:isOff(s)&&!isOffFor(x.u,s)?'토요 오전 근무일':''});
         for(const r of on(x,s)){
           const pend=ev(r).status==='pending';
           const unit=r.unit==='am'?'오전':r.unit==='pm'?'오후':r.unit==='hour'?`${r.time} ${r.hours}시간`:'';
@@ -1968,7 +1983,7 @@ function renderCal(){
       let tot=0;
       for(const s of days){
         const cls=[s===S.selDay?'sel':''];
-        if(isOff(s)){cls.push('offd');if(!on(x,s).length){tr.append(h('td',{class:cls.join(' ')}));continue;}}
+        if(isOffFor(x.u,s)){cls.push('offd');if(!on(x,s).length){tr.append(h('td',{class:cls.join(' ')}));continue;}}
         if(!activeOn(x,s)){cls.push('na');tr.append(h('td',{class:cls.join(' '),title:'재직 기간 아님'}));continue;}
         const o=on(x,s); const cell=h('td',{class:cls.join(' ')});
         if(o.length){
@@ -2083,7 +2098,7 @@ function buildReport(kind,fy,mi){
       if(ev({...r,uid:u}).status!=='approved') continue;
       for(let s=r.start;s<=(r.end||r.start);s=addDays(s,1)){
         if(s<months[0].start||s>months[11].end) continue;
-        const hh=r.unit==='day'?(isOff(s)?0:HPD()):(r.start===s?r.hours:0); if(!hh) continue;
+        const hh=r.unit==='day'?workHoursOn(u,s):(r.start===s?r.hours:0); if(!hh) continue;
         const k=months.findIndex(m=>s>=m.start&&s<=m.end);
         if(counted.includes(r.type)) use[k]+=hh;
         if(k===mi) items.push({s,type:r.type,unit:r.unit,time:r.time,hours:r.hours});
@@ -2187,7 +2202,7 @@ function fillAdmForm(){
 function admState(){
   const type=$('aType').value, grant=!!TYPES[type]?.grant;
   const unit=grant?'grant':$('aUnit').value,start=$('aStart').value,end=unit==='day'?($('aEnd').value||start):start;
-  let hours=0; if(start&&end>=start) hours=grant||unit==='hour'?Number($('aHours').value)||0:unit==='day'?workdays(start,end)*HPD():HPD()/2;
+  let hours=0; if(start&&end>=start) hours=grant||unit==='hour'?Number($('aHours').value)||0:(()=>{const x=(C().roster||{})[$('aWho').value],uu=x?.uid||$('aWho').value;return unit==='day'?workHoursSum(uu,start,end):(isOff(start)?Math.min(HPD()/2,satHoursFor(uu,start)):HPD()/2);})();
   return {k:$('aWho').value,type,unit,start,end,hours,time:unit==='hour'?$('aTime').value:null,reason:$('aReason').value.trim()};
 }
 function admSum(){const f=admState(),g=f.unit==='grant';
@@ -2482,6 +2497,7 @@ function renderAdmin(){
     if(document.activeElement!==$('sFsm')) $('sFsm').value=c.fsm;
     if(document.activeElement!==$('sHpd')) $('sHpd').value=c.hpd;
     if(document.activeElement!==$('sRemind')) $('sRemind').value=REMIND();
+    if(document.activeElement!==$('sSat')) $('sSat').value=SAT_RULES().map(r=>`${r.match}:${(r.weeks||[]).join(',')}:${r.hours}`).join('; ');
     if(document.activeElement!==$('sAdmins')) $('sAdmins').value=(C().admins||[]).join(', ');
     const ch=$('sChain'); ch.replaceChildren();
     for(const p of STEPS){const cb=h('input',{type:'checkbox',checked:c.chain.includes(p),onchange:e=>writeConfig(cf=>{const set=new Set(cf.chain||DEF.chain);e.target.checked?set.add(p):set.delete(p);cf.chain=STEPS.filter(x=>set.has(x));}).catch(writeErr)});ch.append(h('label',{},cb,stepLabel(p)));}
@@ -2593,7 +2609,11 @@ function setupUI(){
   for(let m=1;m<=12;m++) $('sFsm').append(h('option',{value:m},m+'월'));
   $('sFsm').addEventListener('change',e=>writeConfig(c=>{c.fsm=Number(e.target.value);}).catch(writeErr));
   $('sAdmins').addEventListener('change',e=>{const list=e.target.value.split(/[,\s;]+/).map(x=>x.trim().toLowerCase()).filter(x=>x.includes('@'));if(S.me&&!list.includes(S.me))list.unshift(S.me);writeConfig(c=>{c.admins=list;}).catch(writeErr);});
-  $('sRemind').addEventListener('change',e=>{const v=Number(e.target.value);if(v>=1&&v<=14)writeConfig(c=>{c.remindDays=v;}).catch(writeErr);});
+  $('sSat').addEventListener('change',e=>{
+  const rules=[]; for(const part of e.target.value.split(';')){const [m,w,hh]=part.split(':').map(x=>(x||'').trim());if(!m)continue;const weeks=(w||'').split(/[,\s]+/).map(Number).filter(n=>n>=1&&n<=5);if(!weeks.length)continue;rules.push({match:m,weeks,hours:Number(hh)||HPD()/2});}
+  writeConfig(c=>{c.satWork=rules;}).catch(writeErr);
+});
+$('sRemind').addEventListener('change',e=>{const v=Number(e.target.value);if(v>=1&&v<=14)writeConfig(c=>{c.remindDays=v;}).catch(writeErr);});
   $('sHpd').addEventListener('change',e=>{const v=Number(e.target.value);if(v>=1&&v<=12)writeConfig(c=>{c.hpd=v;}).catch(writeErr);});
   const hy=$('holYear'); const y0=new Date().getFullYear();
   for(let y=y0-1;y<=y0+4;y++) hy.append(h('option',{value:y,selected:y===S.holYear},y+'년'));
