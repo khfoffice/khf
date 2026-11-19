@@ -637,7 +637,7 @@ button.file{font:inherit;font-size:12.5px;cursor:pointer}
       </section>
     </div>
   </div>
-<div class="muted small" style="text-align:center;margin-top:24px">프로그램 버전 2026.11.19-2</div>
+<div class="muted small" style="text-align:center;margin-top:24px">프로그램 버전 2026.11.19-3</div>
 </div>
 <script>
 /* ===== 재단 Microsoft 365 연결 정보 ===== */
@@ -1290,7 +1290,7 @@ function evaluate(r,u){
 const ev=r=>S.ev.get(r.id)||{status:'pending',done:[],steps:r.steps||[]};
 function canAct(r){const e=ev(r);if(e.status!=='pending'||r.uid===S.me||!S.me)return false;const step=e.steps[e.idx];return typeof step==='string'?fits(posAt(S.me,TODAY),step)&&scopeOK(step,r.uid,S.me):idEq(S.me,step.p);}
 function recompute(){
-  S.ev=new Map();
+  S.ev=new Map(); S._advC=new Map();
   for(const r of allRequests()) S.ev.set(r.id,evaluate(r,r.uid));
 }
 
@@ -1315,6 +1315,7 @@ function pool(u,fy,kind){
     for(const g of fiscalGrants(p,fy)){ if(g.date<=limit){granted+=g.hours;list.push(g);} else {sched+=g.hours;list.push({...g,future:true});} }
     const adj=Number(p.adj?.[fy])||0; if(adj){granted+=adj;list.push({date:'',hours:adj,label:'관리자 조정'});}
     const pr=Number(p.prior?.[fy])||0; if(pr) list.push({date:'',hours:-pr,label:'이전 관리대장 사용분'});
+    const carry=advanceOut(u,fy-1); if(carry){const g=Math.min(carry,Math.max(0,granted));granted-=g;sched-=carry-g;list.push({date:'',hours:-carry,label:`${fy-1}년에 미리 사용한 분 차감 (복무규정 제36조③)`});}
   }else{
     for(const it of (S.comp[u]?.items||[])) if(fyOf(it.date)===fy){granted+=it.hours;list.push({date:it.date,hours:it.hours,label:it.memo||'대체휴가'});}
     for(const r of reqsOf(u)) if(r.type==='compgrant'&&fyOf(r.start)===fy){const st=ev(r).status;if(st==='approved'){granted+=r.hours;list.push({date:r.start,hours:r.hours,label:'휴일근무 '+(r.reason||'')});}else if(st==='pending')sched+=r.hours;}
@@ -1324,7 +1325,22 @@ function pool(u,fy,kind){
     if(TYPES[r.type]?.pool!==kind||fyOf(r.start)!==fy) continue;
     const st=ev(r).status; if(st==='approved') used+=r.hours; else if(st==='pending') pend+=r.hours;
   }
-  return {granted,sched,used,pend,remain:granted-used,list};
+  const out={granted,sched,used,pend,remain:granted-used,list};
+  if(kind==='annual'){out.advCap=advCap(u,fy);out.advanced=Math.max(0,used-granted);out.advPend=Math.max(0,used+pend-granted)-out.advanced;}
+  return out;
+}
+/* 복무규정 제36조제3항: 남은 연차를 넘는 휴가 사유가 생기면 다음연도 연차의 1/3 범위에서 미리 사용 */
+function advCap(u,fy){
+  const p=P(u); if(!p.hire||(p.end&&p.end<fyStart(fy+1))) return 0;
+  const next=fiscalGrants(p,fy+1).reduce((a,g)=>a+g.hours,0), half=HPD()/2;
+  return Math.floor((next/3)/half+1e-9)*half;
+}
+function advanceOut(u,fy){   // fy 회계연도에 미리 당겨 쓴 시간 (다음 해 연차에서 차감)
+  const p=P(u); if(!p.hire||fy<fyOf(p.hire)||fy>fyOf(TODAY)) return 0;
+  S._advC=S._advC||new Map(); const k=u+'|'+fy; if(S._advC.has(k)) return S._advC.get(k);
+  S._advC.set(k,0);
+  const b=pool(u,fy,'annual'), v=Math.max(0,b.used-b.granted);
+  S._advC.set(k,v); return v;
 }
 function otherUse(u,fy){
   const t={}; for(const r of reqsOf(u)){ if(TYPES[r.type]?.pool||TYPES[r.type]?.grant||fyOf(r.start)!==fy||ev(r).status!=='approved') continue; t[r.type]=(t[r.type]||0)+r.hours; } return t;
@@ -1571,6 +1587,7 @@ function fillFrom(){
 }
 function typeCell(r){
   const out=[h('div',{},TYPES[r.type]?.label)];
+  if(r.adv) out.push(h('div',{class:'small',style:'color:var(--warn)'},`다음연도분 ${fmtH(r.adv)} 미리 사용`));
   if((r.type==='comp'||r.type==='compgrant')&&r.uid){
     const a=compAlloc(r.uid,fyOf(r.start));
     if(r.type==='comp'){const us=a.uses.get(r.id);if(us&&us.length)out.push(h('div',{class:'small',style:'color:var(--accent)'},'← '+us.map(x=>gLabel(x.g)+(us.length>1?` ${fmtH(x.hours)}`:'')).join(', ')));}
@@ -1608,6 +1625,8 @@ function updateSummary(){
   const parts=[];
   if(f.start&&f.unit!=='day'&&isOffFor(S.me,f.start)) parts.push(h('span',{style:'color:var(--bad)'},'고른 날이 휴일이에요'));
   else if(f.hours) parts.push(h('span',{},f.info,' · ',h('b',{},fmtH(f.hours))));
+  if(f.type==='annual'&&f.start&&f.hours){const b=pool(S.me,fyOf(f.start),'annual'),over=f.hours-Math.max(0,b.remain-b.pend);
+    if(over>0&&b.advCap) parts.push(h('span',{style:'color:var(--warn);font-weight:600'},`  다음연도 연차 ${fmtH(over)} 미리 사용 (복무규정 제36조③, 한도 ${fmtH(b.advCap)})`));}
   const ch=stepsFor(S.me,f.type);
   parts.push(h('span',{},'  결재선 ',h('b',{},ch.length?ch.map(stepLabel).join(' › '):'없음 (바로 승인)')));
   box.append(...parts);
@@ -1634,7 +1653,11 @@ function validate(f){
     if(!$('oText').value.trim()) return '공가 사유·내용을 적어 주세요.';
   }
   if(f.type==='comp'&&$('fFrom').value){const g=compAlloc(S.me,fyOf(f.start)).grants.find(x=>x.id===$('fFrom').value);if(!g)return '선택한 휴일근무분을 찾을 수 없어요.';if(f.hours>g.hours-g.used)return `선택한 근무분(${gLabel(g)})의 남은 시간(${fmtH(g.hours-g.used)})보다 많아요. 자동으로 두거나 나눠서 신청해 주세요.`;}
-  if(kind){const b=pool(S.me,fyOf(f.start),kind);const avail=b.remain-b.pend;
+  if(kind==='annual'){const b=pool(S.me,fyOf(f.start),'annual'), avail=Math.max(0,b.remain-b.pend), over=f.hours-avail;
+    if(over>0){const left=Math.max(0,b.advCap-b.advanced-b.advPend);
+      if(!b.advCap) return `연차 잔여(${fmtH(avail)})보다 많아요. 다음연도 연차를 미리 쓸 수 없는 경우예요.`;
+      if(over>left) return `연차 잔여(${fmtH(avail)})와 다음연도 연차 미리 사용 한도(남은 ${fmtH(left)}, 다음연도 연차의 3분의 1)를 넘어요.`;}}
+  else if(kind){const b=pool(S.me,fyOf(f.start),kind);const avail=b.remain-b.pend;
     if(f.hours>avail) return `${TYPES[f.type].label} 잔여(${fmtH(avail)}, 결재 중 제외)보다 많아요.`;}
   return null;
 }
@@ -1643,8 +1666,10 @@ async function submitReq(ev0){
   const msg=$('formMsg'), f=formState(), err=validate(f);
   if(err){msg.textContent=err;msg.className='msg err';return;}
   const steps=stepsFor(S.me,f.type);
+  const advH=f.type==='annual'?(b0=>Math.max(0,f.hours-Math.max(0,b0.remain-b0.pend)))(pool(S.me,fyOf(f.start),'annual')):0;
   const r={id:Date.now().toString(36)+Math.random().toString(36).slice(2,8),type:f.type,unit:f.unit,start:f.start,end:f.end,hours:f.hours,reason:f.reason,steps,createdAt:Date.now()};
   if(f.time) r.time=f.time;
+  if(advH>0) r.adv=advH;
   if(f.type==='comp'&&$('fFrom').value) r.from=$('fFrom').value;
   $('submitBtn').disabled=true;
   try{
@@ -1829,7 +1854,8 @@ function renderMine(){
   else{
     if(b.remain<0) big.append(fmtH(b.remain));
     else big.append(String(toDays(b.remain)),h('small',{},'일'));
-    $('remainCap').textContent=`${fyLabel(fy)} · 발생 ${fmtH(b.granted)} 중 ${fmtH(b.used)} 사용`+(b.pend?`, ${fmtH(b.pend)} 결재 중`:'')+(b.sched?` · 앞으로 ${fmtH(b.sched)} 더 발생`:'');
+    $('remainCap').textContent=`${fyLabel(fy)} · 발생 ${fmtH(b.granted)} 중 ${fmtH(b.used)} 사용`+(b.pend?`, ${fmtH(b.pend)} 결재 중`:'')+(b.sched?` · 앞으로 ${fmtH(b.sched)} 더 발생`:'')
+      +(b.advanced?` · 다음연도 연차 ${fmtH(b.advanced)} 미리 사용(내년 연차에서 차감)`:'')+(b.advCap&&!b.advanced?` · 필요하면 다음연도 연차를 ${fmtH(b.advCap)}까지 미리 쓸 수 있어요`:'');
   }
   // blocks
   const box=$('blocks'); box.replaceChildren();
@@ -2141,7 +2167,7 @@ function buildReport(kind,fy,mi){
       }
     }
     let ent;
-    if(kind==='annual'){ent=fiscalGrants(p,fy).reduce((a,g)=>a+g.hours,0)+(Number(p.adj?.[fy])||0);use[0]+=Number(p.prior?.[fy])||0;}
+    if(kind==='annual'){ent=fiscalGrants(p,fy).reduce((a,g)=>a+g.hours,0)+(Number(p.adj?.[fy])||0)-advanceOut(u,fy-1);use[0]+=Number(p.prior?.[fy])||0;}
     else ent=pool(u,fy,'comp').granted;
     const used=use.slice(0,mi+1).reduce((a,b)=>a+b,0);
     use.forEach((v,i)=>{if(i<=mi)tot[i]+=v;}); tEnt+=ent; tUsed+=used;
@@ -2157,6 +2183,9 @@ function buildReport(kind,fy,mi){
     const young=orderedStaff(fy).filter(x=>x.hire&&fyOf(x.hire)>=fy-1);
     if(young.length) notes.push('* 입사 2년 미만자: 월 단위 연차 포함 산정 - '+young.map(x=>`${x.name}(${dayN(fiscalGrants(P(x.u),fy).reduce((a,g)=>a+g.hours,0))}일)`).join(', '));
     notes.push('* 사용일 표기: (A) 오전 반일, (P) 오후 반일, (A2H) 오전 2시간. 공가·특별휴가는 표시만 하고 연차에서 차감하지 않음.');
+    const carried=orderedStaff(fy).filter(x=>advanceOut(x.u,fy-1)>0), adv=orderedStaff(fy).map(x=>({x,v:Math.max(0,pool(x.u,fy,'annual').used-pool(x.u,fy,'annual').granted)})).filter(o=>o.v>0);
+    if(carried.length) notes.push(`* 전년도 미리 사용분 차감(복무규정 제36조③): `+carried.map(x=>`${x.name} ${dayN(advanceOut(x.u,fy-1))}일`).join(', '));
+    if(adv.length) notes.push(`* 다음연도 연차 미리 사용(복무규정 제36조③, 잔여 음수): `+adv.map(o=>`${o.x.name} ${dayN(o.v)}일`).join(', '));
   }else notes.push('* 부여일수는 승인된 휴일근무 부여 합계(기존 대장 이관분 포함). 사용일 표기: (A)(P) 반일, (A2H)(P2H) 시간 단위.');
   notes.push(`* 작성일 ${TODAY.replaceAll('-','.')} · 승인된 휴가만 집계`);
   // column widths in mm (sum ≈ 281)
@@ -2559,7 +2588,7 @@ function renderAdmin(){
       const p=P(u), b=pool(u,S.fy,'annual'), c=pool(u,S.fy,'comp');
       const adj=h('input',{type:'number',step:'0.125',value:toDays(p.adj?.[S.fy]||0),style:'width:80px;text-align:right','aria-label':'조정 일수',onchange:e=>{const v=Math.round((Number(e.target.value)||0)*HPD()*100)/100;writeConfig(cf=>{cf.people=cf.people||{};const q=cf.people[u]=cf.people[u]||{};q.adj=q.adj||{};if(v)q.adj[S.fy]=v;else delete q.adj[S.fy];}).catch(writeErr);}});
       bt.append(h('tr',{},h('td',{},personEl(u),!p.hire?h('div',{class:'note'},'입사일 없음'):null),h('td',{class:'num'},fmtH(b.granted-(Number(p.adj?.[S.fy])||0))),h('td',{class:'num muted'},fmtH(b.sched)),h('td',{class:'num'},adj),
-        h('td',{class:'num'},fmtH(b.used)),h('td',{class:'num'},fmtH(b.pend)),h('td',{class:'num',style:b.remain<0?'color:var(--bad);font-weight:600':'font-weight:600'},fmtH(b.remain)),h('td',{class:'num'},fmtH(c.remain))));
+        h('td',{class:'num'},fmtH(b.used)),h('td',{class:'num'},fmtH(b.pend)),h('td',{class:'num',style:b.remain<0?'color:var(--warn);font-weight:600':'font-weight:600',title:b.remain<0?`다음연도 연차 ${fmtH(-b.remain)} 미리 사용 (한도 ${fmtH(b.advCap||0)})`:''},fmtH(b.remain),b.remain<0?h('div',{class:'small'},'미리 사용'):null),h('td',{class:'num'},fmtH(c.remain))));
     }
   }
   if(S.sub==='requests'){
