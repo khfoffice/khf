@@ -403,6 +403,9 @@ function(e){return e.hasOwnProperty("authorization_endpoint")&&e.hasOwnProperty(
     }catch(e){console.error(e);btn.disabled=false;msg.className='msgline err';msg.innerHTML=e.status===403?'목록을 만들 권한이 없어요. ① 지금 계정이 khf 사이트 <b>소유자</b>인지, ② Entra 앱의 API 사용 권한에 <b>Sites.Manage.All (위임)</b>이 추가되고 <b>관리자 동의</b>가 됐는지 확인해 주세요. (Graph 오류: '+esc(e.message)+')':'목록을 만들지 못했어요: '+esc(e.message);}}
 
   (async()=>{
+    // 잘못된 자리에 올린 경우 막기: 전자결재는 반드시 approval 폴더 안(…/approval/)에서만 열린다
+    if(/github\.io$/.test(location.hostname)&&!/\/approval\/(index\.html)?$/.test(location.pathname)){
+      window.__wrongPlace=true;gate('파일을 잘못된 자리에 올렸어요',`<p class="err">이 파일은 <b>전자결재(문서관리)</b> 프로그램이에요. GitHub 저장소의 <b>approval 폴더 안</b>에 있어야 하는데, 지금 <b>${esc(location.pathname)}</b> 자리에 올라가 있어요.</p><p>이 자리가 휴가출장관리 프로그램 자리라면 GitHub에서 방금 올린 파일을 되돌려 주세요: 저장소 첫 화면 › index.html › <b>History</b> › 바로 전 버전으로 복원. 데이터는 지워지지 않았어요.</p>`);return;}
     if(!A.clientId||!A.tenantId){gate('연결 정보가 필요해요','<p>파일 맨 위 APP_CONFIG를 확인해 주세요.</p>');return;}
     if(typeof msal==='undefined'){gate('로그인 모듈을 불러오지 못했어요','<p>파일을 다시 올려 주세요.</p>');return;}
     gate('불러오는 중…','<p>Microsoft 365에 연결하고 있어요.</p>');
@@ -653,7 +656,7 @@ td.nw{white-space:nowrap;font-variant-numeric:tabular-nums}
 </div>
 <script>
 /* ================= 프로그램 버전 (고칠 때마다 올림) ================= */
-const APP_VER='2026.11.19 (v53)';
+const APP_VER='2026.11.19 (v54)';
 (function(){const put=()=>{const el=document.getElementById('appVer');if(el)el.textContent='버전 '+APP_VER;};put();document.addEventListener('DOMContentLoaded',put);
   // M365 버전: 서버에 새 버전이 올라왔는지 확인 (열 때 + 30분마다)
   // 새 버전이 올라와 있으면 '업데이트 중' 화면을 보여 주고 자동으로 새 버전을 연다 (작성 중인 글이 있으면 끝날 때까지 기다림)
@@ -663,7 +666,7 @@ const APP_VER='2026.11.19 (v53)';
     let ov=document.getElementById('verUpd');if(!ov){ov=document.createElement('div');ov.id='verUpd';ov.style.cssText='position:fixed;inset:0;z-index:99;background:rgba(255,255,255,.96);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;font:15px/1.5 system-ui,sans-serif;color:#223';
       ov.innerHTML='<div style="width:34px;height:34px;border:4px solid #c9d3e0;border-top-color:#2b5a8a;border-radius:50%;animation:spin 1s linear infinite"></div><b>새 버전으로 업데이트하는 중이에요</b><span style="color:#667">'+APP_VER.replace(/[<>&]/g,'')+' → '+v.replace(/[<>&]/g,'')+'</span><style>@keyframes spin{to{transform:rotate(360deg)}}</style>';document.body.append(ov);}
     setTimeout(()=>{const u=new URL(location.href);u.searchParams.set('v',v.replace(/\W+/g,''));location.replace(u.toString());},900);return true;};
-  const chk=async first=>{if(!window.__isM365)return;try{const r=await fetch(location.pathname+'?nc='+Date.now(),{cache:'no-store'});const tx=await r.text();const m=tx.match(/const APP_VER='([^']+)'/);
+  const chk=async first=>{if(!window.__isM365||window.__wrongPlace)return;try{const r=await fetch(location.pathname+'?nc='+Date.now(),{cache:'no-store'});const tx=await r.text();const m=tx.match(/const APP_VER='([^']+)'/);
     if(!m||m[1]===APP_VER){try{sessionStorage.removeItem('eaUpd');}catch(e){}return;}
     if(first||!busy()){go(m[1]);return;}
     if(!document.getElementById('verNew')){const b=document.createElement('div');b.id='verNew';b.className='notice';b.style.cssText='position:fixed;left:50%;transform:translateX(-50%);bottom:16px;z-index:70;display:flex;gap:10px;align-items:center;box-shadow:0 6px 24px rgba(0,0,0,.2)';
