@@ -295,7 +295,7 @@ button.file{font:inherit;font-size:12.5px;cursor:pointer}
     </section>
 
     <section class="panel">
-      <h2>휴가 신청</h2>
+      <h2>휴가·출장 신청</h2>
       <form class="req" id="reqForm" novalidate>
         <label class="f">종류
           <select id="fType"></select>
@@ -637,7 +637,7 @@ button.file{font:inherit;font-size:12.5px;cursor:pointer}
       </section>
     </div>
   </div>
-<div class="muted small" style="text-align:center;margin-top:24px">프로그램 버전 2026.11.18-1</div>
+<div class="muted small" style="text-align:center;margin-top:24px">프로그램 버전 2026.11.19-2</div>
 </div>
 <script>
 /* ===== 재단 Microsoft 365 연결 정보 ===== */
@@ -1054,15 +1054,18 @@ const stepLabel=s=>typeof s==='object'&&s?(s.label||nameOf(s.p)):(positions().fi
 const stepKey=s=>typeof s==='string'?s:'p:'+s.p;
 const fits=(pos,step)=>levelOf(pos)>0&&levelOf(pos)===STEP_LEVEL[step];
 const rank=p=>levelOf(p);
-const TYPES={
+const TYPES={   // 이 순서대로 신청 화면 목록에 나와요
   annual:{label:'연차',pool:'annual'},
   comp:{label:'대체휴가',pool:'comp'},
+  hctrip:{label:'가정간호',trip:true},
+  trip:{label:'출장',trip:true},
   official:{label:'공가'},
   special:{label:'특별휴가'},
+  absence:{label:'휴직',noCal:true,finalLevel:3},   // 휴직: 팀 캘린더·현황 메일 제외, 상무 전결
   sick:{label:'병가'},
-  trip:{label:'출장'},
   compgrant:{label:'대체휴가 부여',grant:true},
 };
+const isTrip=r=>!!TYPES[r.type]?.trip;
 const UNITS={day:'종일',am:'오전 반일',pm:'오후 반일',hour:'시간'};
 const STATUS={pending:'결재 중',approved:'승인',rejected:'반려'};
 const DEF={fsm:1,hpd:8,chain:['팀장','국원장','이사'],final:{0:1,1:3,2:3},extra:{},off:[],people:{}};
@@ -1258,6 +1261,15 @@ function chainFor(u){const my=rank(posAt(u,TODAY)),line=lineFor(u);
     else if(s&&s.p&&!idEq(u,s.p)&&rank(posAt(s.p,TODAY))>my&&!out.some(o=>o.p===s.p))out.push({p:s.p,label:nameOf(s.p)});
   }
   return out;}
+function stepsFor(u,type){   // 휴직은 상무(3단계) 전결
+  const ch=chainFor(u), fl=TYPES[type]?.finalLevel; if(!fl) return ch;
+  if(rank(posAt(u,TODAY))>=fl) return ch;
+  const lv=s=>typeof s==='string'?STEP_LEVEL[s]:rank(posAt(s.p,TODAY));
+  const out=ch.filter(s=>lv(s)<fl);
+  const top=ch.find(s=>lv(s)===fl)||STEPS.find(p=>STEP_LEVEL[p]===fl&&approversFor(p,u).length);
+  if(top) out.push(top);
+  return out;
+}
 const sig=r=>`${r.type}|${r.unit}|${r.start}|${r.end}|${r.hours}`;
 function evaluate(r,u){
   const o=S.approvals[r.id];
@@ -1596,7 +1608,7 @@ function updateSummary(){
   const parts=[];
   if(f.start&&f.unit!=='day'&&isOffFor(S.me,f.start)) parts.push(h('span',{style:'color:var(--bad)'},'고른 날이 휴일이에요'));
   else if(f.hours) parts.push(h('span',{},f.info,' · ',h('b',{},fmtH(f.hours))));
-  const ch=chainFor(S.me);
+  const ch=stepsFor(S.me,f.type);
   parts.push(h('span',{},'  결재선 ',h('b',{},ch.length?ch.map(stepLabel).join(' › '):'없음 (바로 승인)')));
   box.append(...parts);
 }
@@ -1630,7 +1642,7 @@ async function submitReq(ev0){
   ev0.preventDefault();
   const msg=$('formMsg'), f=formState(), err=validate(f);
   if(err){msg.textContent=err;msg.className='msg err';return;}
-  const steps=chainFor(S.me);
+  const steps=stepsFor(S.me,f.type);
   const r={id:Date.now().toString(36)+Math.random().toString(36).slice(2,8),type:f.type,unit:f.unit,start:f.start,end:f.end,hours:f.hours,reason:f.reason,steps,createdAt:Date.now()};
   if(f.time) r.time=f.time;
   if(f.type==='comp'&&$('fFrom').value) r.from=$('fFrom').value;
@@ -1838,10 +1850,10 @@ function renderMine(){
   const side=$('sideStats'); side.replaceChildren();
   const cp=pool(S.me,fy,'comp');
   side.append(h('div',{class:'mini'},h('span',{},'대체휴가 잔여'),h('b',{},fmtH(cp.remain)),h('span',{},`부여 ${fmtH(cp.granted)}`+(cp.pend?` · 사용 결재 중 ${fmtH(cp.pend)}`:'')+(cp.sched?` · 부여 결재 중 ${fmtH(cp.sched)}`:''))));
-  const o=otherUse(S.me,fy); const txt=['official','special','sick','trip'].filter(k=>o[k]).map(k=>`${TYPES[k].label} ${fmtH(o[k])}`).join(' · ');
+  const o=otherUse(S.me,fy); const txt=['hctrip','trip','official','special','absence','sick'].filter(k=>o[k]).map(k=>`${TYPES[k].label} ${fmtH(o[k])}`).join(' · ');
   side.append(h('div',{class:'mini'},h('span',{},'그 밖의 사용 (승인)'),h('b',{style:'font-size:15px;margin-top:4px'},txt||'없음')));
   // my list
-  const GROUPS={all:['전체',()=>true],annual:['연차',r=>r.type==='annual'],comp:['대체휴가',r=>r.type==='comp'||r.type==='compgrant'],other:['공가·병가 등',r=>['official','special','sick','trip'].includes(r.type)]};
+  const GROUPS={all:['전체',()=>true],annual:['연차',r=>r.type==='annual'],comp:['대체휴가',r=>r.type==='comp'||r.type==='compgrant'],other:['출장·공가 등',r=>['hctrip','trip','official','special','absence','sick'].includes(r.type)]};
   const allRows=reqsOf(S.me).filter(r=>fyOf(r.start)===fy);
   S.myF=S.myF||'all';
   $('myFilter').replaceChildren(...Object.entries(GROUPS).map(([k,[label,fn]])=>h('button',{type:'button','aria-pressed':String(S.myF===k),onclick:()=>{S.myF=k;render();}},`${label} ${allRows.filter(fn).length}`)));
@@ -1909,8 +1921,8 @@ function renderInbox(){
 }
 
 /* ---------- 화면: 팀 캘린더 ---------- */
-const TCODE={annual:'연',comp:'대',official:'공',special:'특',sick:'병',trip:'출'};
-const TCOLOR={annual:'var(--accent)',comp:'#7A5CC8',official:'var(--ok)',special:'#2B8A8A',sick:'var(--bad)',trip:'var(--warn)'};
+const TCODE={annual:'연',comp:'대',hctrip:'가',trip:'출',official:'공',special:'특',absence:'휴',sick:'병'};
+const TCOLOR={annual:'var(--accent)',comp:'#7A5CC8',hctrip:'#B4590C',trip:'var(--warn)',special:'#2B8A8A',absence:'#6B7280',sick:'var(--bad)',official:'var(--ok)'};
 function staffRows(){
   const roster=C().roster||{}, rows=[], linked=new Set();
   for(const [k,x] of Object.entries(roster)){
@@ -1936,7 +1948,7 @@ function renderWeek(){
   const ws=wkStartOf(), days=[...Array(7)].map((_,i)=>addDays(ws,i)), we=days[6];
   const fd=s=>{const d=parse(s);return `${d.getMonth()+1}.${d.getDate()}(${DOW[d.getDay()]})`;};
   $('calTitle').textContent=`${parse(ws).getFullYear()}년 ${fd(ws)} ~ ${fd(we)}`;
-  const byU={}; for(const r of allRequests()){if(ev(r).status==='rejected'||TYPES[r.type]?.grant||r.start>we||(r.end||r.start)<ws)continue;(byU[r.uid]=byU[r.uid]||[]).push(r);}
+  const byU={}; for(const r of allRequests()){if(TYPES[r.type]?.noCal)continue;if(ev(r).status==='rejected'||TYPES[r.type]?.grant||r.start>we||(r.end||r.start)<ws)continue;(byU[r.uid]=byU[r.uid]||[]).push(r);}
   const all=staffRows().filter(x=>!(x.end&&x.end<ws)&&!(x.hire&&x.hire>we));
   const on=(x,s)=>x.u?(byU[x.u]||[]).filter(r=>hoursOn(r,s)>0):[];
   const busy=all.filter(x=>days.some(s=>on(x,s).length));
@@ -1970,10 +1982,10 @@ function renderWeek(){
   }
   if(!rows.length) tb.append(h('tr',{},h('td',{colspan:'8',class:'muted',style:'text-align:center;padding:20px'},'이번 주에는 휴가·출장 일정이 없어요.')));
   tbl.append(tb);
-  const stat=s=>{let lv=0,tr=0,abs=0,act=0;for(const x of all){if(!activeOn(x,s))continue;act++;let a=0,b=0;for(const r of on(x,s)){const hh=hoursOn(r,s);if(r.type==='trip')b+=hh;else a+=hh;}if(a)lv++;if(b)tr++;if(a+b>=HPD())abs++;}return {lv,tr,work:act-abs};};
+  const stat=s=>{let lv=0,tr=0,abs=0,act=0;for(const x of all){if(!activeOn(x,s))continue;act++;let a=0,b=0;for(const r of on(x,s)){const hh=hoursOn(r,s);if(isTrip(r))b+=hh;else a+=hh;}if(a)lv++;if(b)tr++;if(a+b>=HPD())abs++;}return {lv,tr,work:act-abs};};
   const ft=h('tfoot'); for(const [label,k] of [['휴가','lv'],['출장','tr'],['근무','work']]) ft.append(h('tr',{},h('td',{class:'nm'},label),...days.map(s=>h('td',{},isOff(s)?'':(v=>k!=='work'&&!v?'':String(v))(stat(s)[k])))));
   tbl.append(ft);
-  $('wkLegend').replaceChildren(...Object.entries(TCODE).map(([k])=>h('span',{class:'tag',style:`--t:${TCOLOR[k]}`},TYPES[k].label)),h('span',{},'점선: 결재 중'),h('span',{},S.isAdmin?'관리자는 모든 사유가 보여요':'사유는 본인·결재자·관리자에게만 보여요'));
+  $('wkLegend').replaceChildren(...Object.entries(TCODE).filter(([k])=>!TYPES[k].noCal).map(([k])=>h('span',{class:'tag',style:`--t:${TCOLOR[k]}`},TYPES[k].label)),h('span',{},'점선: 결재 중'),h('span',{},S.isAdmin?'관리자는 모든 사유가 보여요':'사유는 본인·결재자·관리자에게만 보여요'));
 }
 function renderCal(){
   const y=S.calY,m=S.calM; $('calTitle').textContent=`${y}년 ${m+1}월`;
@@ -1985,7 +1997,7 @@ function renderCal(){
   const n=new Date(y,m+1,0).getDate(), ms=ymd(new Date(y,m,1)), me=ymd(new Date(y,m,n));
   const days=[...Array(n)].map((_,i)=>addDays(ms,i));
   if(!S.selDay||S.selDay<ms||S.selDay>me) S.selDay=(TODAY>=ms&&TODAY<=me)?TODAY:(days.find(d=>!isOff(d))||ms);
-  const byU={}; for(const r of allRequests()){if(ev(r).status==='rejected'||r.start>me||(r.end||r.start)<ms)continue;(byU[r.uid]=byU[r.uid]||[]).push(r);}
+  const byU={}; for(const r of allRequests()){if(TYPES[r.type]?.noCal)continue;if(ev(r).status==='rejected'||r.start>me||(r.end||r.start)<ms)continue;(byU[r.uid]=byU[r.uid]||[]).push(r);}
   const rows=staffRows().filter(x=>!(x.end&&x.end<ms)&&!(x.hire&&x.hire>me));
   const groups=new Map(); for(const x of rows){const t=x.team||'소속 미정';if(!groups.has(t))groups.set(t,[]);groups.get(t).push(x);}
   for(const t of groups.keys()) groups.get(t).sort((a,b)=>cmpPeople(a.u,b.u));
@@ -2012,7 +2024,7 @@ function renderCal(){
         const o=on(x,s); const cell=h('td',{class:cls.join(' ')});
         if(o.length){
           const main=o.sort((a,b)=>b.h-a.h)[0], r=main.r, sum=o.reduce((a,b)=>a+b.h,0), pend=o.some(z=>ev(z.r).status==='pending');
-          for(const z of o) if(z.r.type!=='trip') tot+=z.h;
+          for(const z of o) if(!isTrip(z.r)) tot+=z.h;
           cell.append(h('span',{class:'lv'+(pend?' pend':sum<HPD()?' part':''),style:`--t:${TCOLOR[r.type]}`,title:o.map(z=>`${TYPES[z.r.type].label} ${unitText(z.r)}${ev(z.r).status==='pending'?' (결재 중)':''}`).join(', ')},TCODE[r.type]||'·'));
         }
         tr.append(cell);
@@ -2023,7 +2035,7 @@ function renderCal(){
   }
   tbl.append(tb);
   // 합계 줄
-  const stats=s=>{let act=0,lv=0,tr=0,abs=0;for(const x of rows){if(!activeOn(x,s))continue;act++;let a=0,b=0;for(const z of on(x,s)){if(z.r.type==='trip')b+=z.h;else a+=z.h;}if(a)lv++;if(b)tr++;if(a+b>=HPD())abs++;}return {act,lv,tr,work:act-abs};};
+  const stats=s=>{let act=0,lv=0,tr=0,abs=0;for(const x of rows){if(!activeOn(x,s))continue;act++;let a=0,b=0;for(const z of on(x,s)){if(isTrip(z.r))b+=z.h;else a+=z.h;}if(a)lv++;if(b)tr++;if(a+b>=HPD())abs++;}return {act,lv,tr,work:act-abs};};
   const ft=h('tfoot');
   for(const [label,key] of [['휴가','lv'],['출장','tr'],['근무','work']]){
     const tr=h('tr',{},h('td',{class:'nm'},label));
@@ -2042,7 +2054,7 @@ function renderCal(){
     if(!who.childNodes.length) who.append(h('span',{class:'muted small'},'휴가·출장자가 없어요.'));
     box.append(who);
   }
-  const lg=$('sgLegend'); lg.replaceChildren(...Object.entries(TCODE).map(([k,c])=>h('span',{},h('span',{class:'tag',style:`--t:${TCOLOR[k]};padding:0 6px;margin-right:4px`},c),TYPES[k].label)),
+  const lg=$('sgLegend'); lg.replaceChildren(...Object.entries(TCODE).filter(([k])=>!TYPES[k].noCal).map(([k,c])=>h('span',{},h('span',{class:'tag',style:`--t:${TCOLOR[k]};padding:0 6px;margin-right:4px`},c),TYPES[k].label)),
     h('span',{},'테두리만: 반일·시간'),h('span',{},'점선: 결재 중'),h('span',{},'날짜를 누르면 그날 현황을 보여 줘요'));
 }
 $('grantForm').addEventListener('submit',async e=>{
@@ -2379,14 +2391,14 @@ async function runSyncDays(){
     const order=allPeopleIds().sort(cmpPeople), oi=u=>{const i=order.indexOf(u);return i<0?999:i;};
     const esc=t=>String(t??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
     for(const r of allRequests()){
-      const st=ev(r).status; if(st!=='approved'&&st!=='pending') continue; if(TYPES[r.type]?.grant) continue;
+      const st=ev(r).status; if(st!=='approved'&&st!=='pending') continue; if(TYPES[r.type]?.grant||TYPES[r.type]?.noCal) continue;
       if((r.end||r.start)<from||r.start>to) continue;
       const p=P(r.uid), team=p.team||p.bureau||'', name=nameOf(r.uid);
       for(let d=r.start<from?from:r.start;d<=(r.end||r.start)&&d<=to;d=addDays(d,1)){
         if(!hoursOn(r,d)) continue;
         const unit=r.unit==='am'?'오전':r.unit==='pm'?'오후':r.unit==='hour'?`${r.time} ${r.hours}시간`:(isOff(d)?'오전(토요)':'종일');
         const stl=st==='pending'?'결재 중':'승인', k=TYPES[r.type]?.label||'';
-        const data={d,n:name,t:team,k,u:unit,s:stl,trip:r.type==='trip'?1:0,o:String(oi(r.uid)).padStart(3,'0')+name,
+        const data={d,n:name,t:team,k,u:unit,s:stl,trip:isTrip(r)?1:0,o:String(oi(r.uid)).padStart(3,'0')+name,
           row:`<tr><td>${esc(team)}</td><td>${esc(name)}</td><td>${esc(k)}</td><td>${esc(unit)}</td><td>${esc(stl)}</td></tr>`};
         want.set(`${d}|${r.id}`,JSON.stringify(data));
       }
@@ -2477,7 +2489,7 @@ document.addEventListener('click',e=>{const b=e.target.closest('#calMode button'
 function renderMonth(){
   const y=S.calY,m=S.calM; $('calTitle').textContent=`${y}년 ${m+1}월`;
   const first=new Date(y,m,1), off=first.getDay(), start=ymd(new Date(y,m,1-off));
-  const reqs=allRequests().filter(r=>ev(r).status!=='rejected');
+  const reqs=allRequests().filter(r=>!TYPES[r.type]?.noCal&&ev(r).status!=='rejected');
   const cal=$('cal'); cal.replaceChildren();
   ['일','월','화','수','목','금','토'].forEach((d,i)=>cal.append(h('div',{class:'dow'+(i===0?' sun':i===6?' sat':'')},d)));
   for(let i=0;i<42;i++){
@@ -2488,7 +2500,7 @@ function renderMonth(){
       const hrs=hoursOn(r,s); if(!hrs) continue;
       const p=PS[r.uid], pend=ev(r).status==='pending';
       const unit=r.unit==='day'?'':r.unit==='hour'?` ${r.time} ${r.hours}h`:` ${UNITS[r.unit].replace(' 반일','')}`;
-      cell.append(h('div',{class:'chip'+(pend?' pend':'')+(r.type==='trip'?' trip':''),style:p?`--c:${p.color}`:'',title:`${nameOf(r.uid)} · ${TYPES[r.type]?.label}${unit}${pend?' (결재 중)':''}`},`${nameOf(r.uid)} ${TYPES[r.type]?.label}${unit}`));
+      cell.append(h('div',{class:'chip'+(pend?' pend':'')+(isTrip(r)?' trip':''),style:p?`--c:${p.color}`:'',title:`${nameOf(r.uid)} · ${TYPES[r.type]?.label}${unit}${pend?' (결재 중)':''}`},`${nameOf(r.uid)} ${TYPES[r.type]?.label}${unit}`));
     }
     cal.append(cell);
   }
@@ -2580,7 +2592,7 @@ function renderAdmin(){
       if(e.override) acts.append(h('button',{class:'btn ghost sm',onclick:()=>adminSet(r,null)},'되돌리기'));
       else if(e.status==='pending') acts.append(h('button',{class:'btn ok sm',onclick:()=>adminSet(r,'approved')},'승인'),h('button',{class:'btn bad sm',onclick:()=>adminSet(r,'rejected')},'반려'));
       acts.append(armBtn('d'+r.id,'삭제','정말 삭제?',()=>adminDelete(r)));
-      at.append(h('tr',{},h('td',{},personEl(r.uid)),h('td',{},whenEl(r)),h('td',{},typeCell(r)),h('td',{class:'num'},fmtH(r.hours)),h('td',{},lineEl(r),(e.status==='pending'&&(r.steps||[]).map(stepKey).join()!==chainFor(r.uid).map(stepKey).join())?h('div',{class:'muted small'},'지금 결재선: '+(chainFor(r.uid).map(stepLabel).join(' › ')||'없음')):null),h('td',{},badge(e.status)),h('td',{class:'num'},acts)));
+      at.append(h('tr',{},h('td',{},personEl(r.uid)),h('td',{},whenEl(r)),h('td',{},typeCell(r)),h('td',{class:'num'},fmtH(r.hours)),h('td',{},lineEl(r),(e.status==='pending'&&(r.steps||[]).map(stepKey).join()!==stepsFor(r.uid,r.type).map(stepKey).join())?h('div',{class:'muted small'},'지금 결재선: '+(stepsFor(r.uid,r.type).map(stepLabel).join(' › ')||'없음')):null),h('td',{},badge(e.status)),h('td',{class:'num'},acts)));
     }
   }
   if(S.sub==='comp'){
