@@ -574,6 +574,8 @@ td.nw{white-space:nowrap;font-variant-numeric:tabular-nums}
 .paper .sg b{display:block;font-size:10.5pt;color:#b3261e;font-family:var(--f-doc)}
 .paper .sg img.sig{display:block;max-height:9mm;max-width:92%;margin:.3mm auto;object-fit:contain}
 .paper .sg small{display:block;color:#444;font-size:7.5pt}
+.paper .sg img.apv{display:block;width:7.5mm;height:7.5mm;margin:0 auto .3mm;mix-blend-mode:multiply}
+.paper .sg .apvn{display:block;color:#111;font-weight:700;font-size:9.5pt;font-family:var(--f-doc)}
 .paper .slash{position:relative;padding:0;background:transparent!important}.paper .slash svg{position:absolute;left:0;top:0;width:100%;height:100%;display:block}
 .paper .body{white-space:pre-wrap;height:120mm;vertical-align:top;padding:4mm}
 .paper .foot{text-align:center;font-family:var(--f-doc);font-size:13pt;font-weight:700;margin-top:6mm}
@@ -651,7 +653,7 @@ td.nw{white-space:nowrap;font-variant-numeric:tabular-nums}
 </div>
 <script>
 /* ================= 프로그램 버전 (고칠 때마다 올림) ================= */
-const APP_VER='2026.11.19 (v52)';
+const APP_VER='2026.11.19 (v53)';
 (function(){const put=()=>{const el=document.getElementById('appVer');if(el)el.textContent='버전 '+APP_VER;};put();document.addEventListener('DOMContentLoaded',put);
   // M365 버전: 서버에 새 버전이 올라왔는지 확인 (열 때 + 30분마다)
   // 새 버전이 올라와 있으면 '업데이트 중' 화면을 보여 주고 자동으로 새 버전을 연다 (작성 중인 글이 있으면 끝날 때까지 기다림)
@@ -1176,13 +1178,16 @@ function signPanel(){const k=myKey();if(!k||!S.me)return null;const m=h('div',{c
         cur&&S.links[S.me]?.sign?h('div',{style:'margin-top:6px'},armBtn('rmSign','서명 지우기','정말 지울까요?',async()=>{try{const old=S.links[S.me].sign;const l=clone(S.links[S.me]);delete l.sign;await serial('link',()=>S.db.doc('links/'+S.me).set(l));try{await S.assets.delete(old.id);}catch{}}catch(er){writeErr(er);}})):null),
       h('div',{style:'flex:1;min-width:260px'},h('div',{class:'small muted',style:'margin-bottom:4px'},'마우스나 손가락으로 그리기'),signPad(save,m),
         h('div',{class:'row',style:'margin-top:8px'},h('label',{class:'btn ghost sm',style:'cursor:pointer'},'서명 이미지 파일 올리기',h('input',{type:'file',accept:'image/png,image/jpeg',hidden:true,onchange:e=>{const f=e.target.files[0];e.target.value='';if(f)save(f);}})),h('span',{class:'small muted'},'배경이 흰색이나 투명한 PNG가 좋아요.')))),m);}
+// 결재란: 등록한 서명이 있으면 서명, 없으면 빨간 '승인' 도장 + 검정 이름
+const APPROVE_SVG='data:image/svg+xml;charset=utf-8,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="44" fill="none" stroke="#d0021b" stroke-width="7"/><text x="50" y="61" font-size="31" text-anchor="middle" font-weight="700" fill="#d0021b" font-family="Malgun Gothic,Apple SD Gothic Neo,sans-serif">승인</text></svg>');
+function signOrStamp(k){const s=signImg(k);if(s)return [s];return [h('img',{class:'apv',src:APPROVE_SVG,alt:'승인'}),h('span',{class:'apvn'},nameK(k))];}
 function signCells(d){
   const e=ev(d),steps=(e.status==='draft'?(computeSteps(d)||[]):e.steps)||[],cells=[];const au=(d.kind==='in'||damOf(d))&&d.steps?(d.chainBase||baseKey(d)):d.author,auLv=lvl(au);
   const subOk=['pending','approved','rejected','recv','done'].includes(e.status);
   const dam=steps[0]&&steps[0].dam?0:-1;
   const grey=t=>h('small',{style:'color:#888'},t),mark=t=>h('span',{class:'stamp jg'},t);
-  const sgn=(k,t,...lab)=>[...lab.filter(Boolean).map(l=>h('small',{},l)),signImg(k)||h('b',{},nameK(k)),h('small',{},mmdd(t))];
-  const auCell=()=>subOk?(d.proxyBy&&au===d.author&&R(d.proxyBy)?[h('small',{},'대리'),signImg(d.proxyBy)||h('b',{},nameK(d.proxyBy)),h('small',{},mmdd(e.submitAt))]:sgn(au,e.submitAt)):e.status==='draft'?grey(nameK(au)):'';
+  const sgn=(k,t,...lab)=>[...lab.filter(Boolean).map(l=>h('small',{},l)),...signOrStamp(k),h('small',{},mmdd(t))];
+  const auCell=()=>subOk?(d.proxyBy&&au===d.author&&R(d.proxyBy)?[h('small',{},'대리'),...signOrStamp(d.proxyBy),h('small',{},mmdd(e.submitAt))]:sgn(au,e.submitAt)):e.status==='draft'?grey(nameK(au)):'';
   const auUp=dam!==0&&auLv>=1;
   if(dam===0){const x=e.done[0];cells.push(h('td',{class:'sg'},x?sgn(x.by,x.at,x.v==='no'?'반려':null):e.status==='pending'&&e.idx===0?[h('div',{style:'font-size:9pt'},nameK(steps[0].key)),h('small',{},'결재 대기')]:e.status==='draft'?grey(nameK(steps[0].key)):''));}
   else if(auUp||(DAM_KINDS.includes(d.kind)&&d.dam&&d.dam===d.author))cells.push(slashTd());
@@ -1490,7 +1495,7 @@ function finalLevelOf(d){
   if(d.rule==='manual')return Number(d.manualLevel)||1;
   const r=RULES.find(x=>x.id===d.rule);return r?r.l:0;}
 const NO_TITLE_KINDS=['subsidy','condol','buy','sms','overtime','allow','expense'];   // 제목 칸 없이 자동 제목
-const PRINT_KINDS=NO_TITLE_KINDS;   // 결재 완료 뒤 출력해서 회계팀에 내는 신청서
+const PRINT_KINDS=NO_TITLE_KINDS.filter(k=>!['overtime','allow'].includes(k));   // 결재 완료 뒤 출력해서 회계팀에 내는 신청서 (시간외·수당은 출력 제출 없음)
 function autoTitle(d){if(d.kind==='buy'){const n=(d.items||[]).map(x=>String(x.name||'').trim()).filter(Boolean);return `물품구입 - ${n[0]||'물품'}${n.length>1?` 외 ${n.length-1}건`:''}`;}return FORMS[d.kind]?FORMS[d.kind].title(d):(d.title||'');}
 const PRINT_NOTE='결재가 끝났어요. 결재문서를 출력(인쇄 또는 PDF)해서 회계팀에 전달해 주세요.';
 const DAM_KINDS=['condol','subsidy','overtime'];   // 신청인과 처리 담당이 다른 신청서 (담당은 관리 › 신청서 집계에서 지정)
@@ -2513,7 +2518,7 @@ function mailAfterDecide(d,e,v,hu,note){
   if(e.idx+1<steps.length)return mailStep(d,e.idx+1,'결재 요청');
   if(!steps[e.idx]||!steps[e.idx].final&&steps.slice(e.idx+1).some(s=>!s.coop))return;   // 마지막 결재가 아니면 완료 메일 없음
   const to=[d.author].filter(k=>k&&k!==myKey());   // 신청인(기안자)에게만
-  if(to.length)mailKeys(to,'결재 완료',d,PRINT_KINDS.includes(d.kind)?`${nameK(d.author)}님, 신청하신 ${KINDS[d.kind]?.label||'문서'}의 결재가 모두 끝났어요. 결재문서를 출력(인쇄 또는 PDF)해서 회계팀에 전달해 주세요.`:'');}
+  if(to.length)mailKeys(to,'결재 완료',d,PRINT_KINDS.includes(d.kind)?`${nameK(d.author)}님, 신청하신 ${KINDS[d.kind]?.label||'문서'}의 결재가 모두 끝났어요. 결재문서를 출력(인쇄 또는 PDF)해서 회계팀에 전달해 주세요.`:FORMS[d.kind]?`${nameK(d.author)}님, 신청하신 ${KINDS[d.kind]?.label||'문서'}의 결재가 모두 끝났어요. 따로 출력해서 제출하지 않아도 돼요.`:'');}
 function perfLine(){const p=S.perf||{};if(!p.first)return null;return h('p',{class:'small muted',style:'margin:0 0 10px'},`로딩 진단 · 처음 화면까지 ${(p.first/1000).toFixed(1)}초 · 불러온 문서 ${p.n}건 (문서 풀기 ${(p.ingest/1000).toFixed(1)}초) · 이관 문서 ${p.lazyN||0}건은 열 때 풀어요 · 버전 ${APP_VER}`);}
 function adminStaff(v){{const pl=perfLine();if(pl)v.append(pl);}
   if(window.__isM365){const am=h('div',{class:'msg'});let val=(C().admins||[]).join(', ');
