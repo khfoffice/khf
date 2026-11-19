@@ -651,7 +651,7 @@ td.nw{white-space:nowrap;font-variant-numeric:tabular-nums}
 </div>
 <script>
 /* ================= 프로그램 버전 (고칠 때마다 올림) ================= */
-const APP_VER='2026.11.17 (v51)';
+const APP_VER='2026.11.19 (v52)';
 (function(){const put=()=>{const el=document.getElementById('appVer');if(el)el.textContent='버전 '+APP_VER;};put();document.addEventListener('DOMContentLoaded',put);
   // M365 버전: 서버에 새 버전이 올라왔는지 확인 (열 때 + 30분마다)
   // 새 버전이 올라와 있으면 '업데이트 중' 화면을 보여 주고 자동으로 새 버전을 연다 (작성 중인 글이 있으면 끝날 때까지 기다림)
@@ -840,7 +840,7 @@ const stepLabel=s=>s.coop?'협조':s.dam?'담당':LV[s.level]||'결재';
 
 /* ---------- 서명(위변조 확인용) ---------- */
 const SIGF={etc:['title','body','keep','rule','manualLevel','manualWhy'],gian:['title','body','attach','keep','recipient','sender','team','rule','manualLevel','manualWhy'],buy:['title','items','vat','goods','vendor','vtel','pay','orderDate','dueDate','note','attach'],out:['title','body','attach','to','cc','replyTo','rule','manualLevel','manualWhy'],in:['title','origNo','sender','recvDate','replyNeed','replyDue','manualLevel','round']};
-function sigOf(d){const o={k:d.kind,a:d.author,b:d.branch,s:(d.steps||[]).map(s=>[s.key,s.level||0,!!s.coop,!!s.final]),f:(d.files||[]).map(f=>f.id)};for(const f of (SIGF[d.kind]||[]))o[f]=d[f]??null;for(const f of ['msum','dlist','mark','senderBy','noSeal','openness','via','execDate','dam','round','memo','otsum'])if(d[f]!=null)o[f]=d[f];return hash(JSON.stringify(o));}
+function sigOf(d){const o={k:d.kind,a:d.author,b:d.branch,s:(d.steps||[]).map(s=>[s.key,s.level||0,!!s.coop,!!s.final]),f:(d.files||[]).map(f=>f.id)};for(const f of (SIGF[d.kind]||[]))o[f]=d[f]??null;for(const f of ['msum','dlist','mark','senderBy','noSeal','openness','via','execDate','dam','round','memo','otsum','proxyBy'])if(d[f]!=null)o[f]=d[f];return hash(JSON.stringify(o));}
 
 /* ---------- 결재 판정 ---------- */
 function entriesFor(docId){const out=[];for(const [u,doc] of Object.entries(S.dec))for(const [k,e] of Object.entries(doc?.d||{}))if(k.startsWith(docId+':'))out.push({...e,uid:u,slot:k.slice(docId.length+1)});return out;}
@@ -1182,7 +1182,7 @@ function signCells(d){
   const dam=steps[0]&&steps[0].dam?0:-1;
   const grey=t=>h('small',{style:'color:#888'},t),mark=t=>h('span',{class:'stamp jg'},t);
   const sgn=(k,t,...lab)=>[...lab.filter(Boolean).map(l=>h('small',{},l)),signImg(k)||h('b',{},nameK(k)),h('small',{},mmdd(t))];
-  const auCell=()=>subOk?sgn(au,e.submitAt):e.status==='draft'?grey(nameK(au)):'';
+  const auCell=()=>subOk?(d.proxyBy&&au===d.author&&R(d.proxyBy)?[h('small',{},'대리'),signImg(d.proxyBy)||h('b',{},nameK(d.proxyBy)),h('small',{},mmdd(e.submitAt))]:sgn(au,e.submitAt)):e.status==='draft'?grey(nameK(au)):'';
   const auUp=dam!==0&&auLv>=1;
   if(dam===0){const x=e.done[0];cells.push(h('td',{class:'sg'},x?sgn(x.by,x.at,x.v==='no'?'반려':null):e.status==='pending'&&e.idx===0?[h('div',{style:'font-size:9pt'},nameK(steps[0].key)),h('small',{},'결재 대기')]:e.status==='draft'?grey(nameK(steps[0].key)):''));}
   else if(auUp||(DAM_KINDS.includes(d.kind)&&d.dam&&d.dam===d.author))cells.push(slashTd());
@@ -1604,6 +1604,9 @@ function editor(){
       fld('주 (비고·첨부 문구)',inp('note',{tag:'textarea',rows:2,placeholder:'예: 1. 견적서 1부.  끝.'}),'f s6'));
     setTimeout(refreshTotal);
   }
+  if(FORMS[d.kind]&&S.isAdmin&&(!d.sig||['draft','rejected','withdrawn'].includes(ev(d).status))){   // 관리자만: 다른 직원 신청서를 대신 등록
+    const me=myKey(),writer=d.proxyBy||me;const pn=h('span',{class:'small muted'});const note=()=>{pn.textContent=d.proxyBy?`관리자 ${nameK(d.proxyBy)}이(가) 대신 등록 · 신청인 ${nameK(d.author)}`:'본인 신청';};note();
+    form.append(h('div',{class:'f s6 rulebox'},h('span',{},'신청인 (관리자 대리 등록: 다른 직원 신청서를 대신 올릴 때 그 직원을 고르세요)'),h('div',{class:'row'},teamPersonPicker('e_applicant',d.author,k=>{if(!k)k=writer;d.author=k;if(k===writer)delete d.proxyBy;else d.proxyBy=writer;d.team=R(k)?.team||'';d.stepOverride=null;note();refreshSteps();},{empty:'신청인 선택',filter:x=>!R(x)?.left}),pn)));}
   if(FORMS[d.kind]){let lp;const rs=()=>{refreshSteps();lp&&lp.redraw();};FORMS[d.kind].edit(d,form,{refreshSteps:rs});lp=levelPicker(d,FORMS[d.kind].lv,rs);form.append(lp);}
   // 첨부
   const fl=h('div',{});const drawFiles=()=>fl.replaceChildren(fileChips(d.files,i=>{d.files.splice(i,1);drawFiles();}));drawFiles();
@@ -1849,7 +1852,7 @@ const moCols=t=>t.two?[['g','구 분'],['when','시행예정']]:[['g','구 분']
 const moT=(t,x)=>t.two&&x&&x.fmt==='4'?{...t,two:false}:t;
 const moFilled=r=>!!r&&['g','task','detail','when'].some(f=>String(r[f]||'').trim());
 const moRowsOf=x=>Array.isArray(x?.rows)?x.rows.filter(moFilled):[];
-const moState=y=>!y||!y.at||!Array.isArray(y.rows)?'미작성':y.submitted?(y.imported?'제출(PPT 이관)':'제출'):'작성 중';
+const moState=y=>!y||!y.at||!Array.isArray(y.rows)||!y.rows.some(moFilled)||!y.submitted?'미작성':(y.imported?'제출(PPT 이관)':'제출');
 const moTeam=id=>MO_TEAMS.find(t=>t.id===id)||MO_TEAMS[0];
 function subscribeMonth(ym){if(S.moFor===ym||!S.db)return;S.moFor=ym;S.mo={};if(moUnsub)moUnsub();
   moUnsub=S.db.collection('mo').where('ym','==',ym).onSnapshot(snap=>{const m={};for(const x of snap.docs)m[x.data().dept]=x.data();S.mo=m;render();},e=>console.error(e));}
@@ -2337,7 +2340,7 @@ function adminAgg(v){
   // 시간외근무: 지급 결의 기안 없이 '시간외 근무자 현황' 표(엑셀)만 만든다 (재단 현황표 양식)
   const otRows=()=>{const by=new Map();for(const d of sel){const o=by.get(d.author)||{h:0,notes:[]};for(const x of (d.rows||[]).filter(x=>x.day)){o.h+=hoursOf(x.from,x.to)||0;const dd=parse(x.day);const ln=`${dd.getMonth()+1}/${dd.getDate()} ${x.reason||''}`.trim();if(!o.notes.includes(ln))o.notes.push(ln);}by.set(d.author,o);}
     const grp=k=>{const r=R(k)||{};const bo=r.branch&&!isHqBranch(r.branch)?branchById(r.branch).name:'';return r.bureau||bo||'사무국';};
-    const ppl=Object.keys(C().roster||{}).filter(k=>!R(k)?.left&&(A.otAll!==false||by.has(k)));for(const k of by.keys())if(!ppl.includes(k))ppl.push(k);
+    const ppl=[...by.keys()];   // 이번 달 시간외근무를 신청한 사람만
     const gO=[],tO=[];for(const k of [...ppl].sort((a,b)=>ordIdx(a)-ordIdx(b))){const g=grp(k),tm=R(k)?.team||'-';if(!gO.includes(g))gO.push(g);if(!tO.includes(g+'|'+tm))tO.push(g+'|'+tm);}
     ppl.sort((a,b)=>gO.indexOf(grp(a))-gO.indexOf(grp(b))||tO.indexOf(grp(a)+'|'+(R(a)?.team||'-'))-tO.indexOf(grp(b)+'|'+(R(b)?.team||'-'))||ordIdx(a)-ordIdx(b));
     return ppl.map(k=>{const o=by.get(k);return {g:grp(k),tm:R(k)?.team||'-',pos:R(k)?.pos||'',name:nameK(k),h:o?Math.round(o.h*10)/10:'',note:o?o.notes.join('\n'):''};});};
@@ -2361,7 +2364,7 @@ function adminAgg(v){
     h('div',{class:'row',style:'margin-bottom:10px'},
       h('select',{'aria-label':'신청서 종류',onchange:e=>{A.kind=e.target.value;A.pick=null;render(true);}},Object.keys(AGG).map(k=>h('option',{value:k,selected:A.kind===k},KINDS[k]?.label||k))),
       h('input',{type:'month','aria-label':'월',value:A.ym,onchange:e=>{A.ym=e.target.value||A.ym;A.pick=null;render(true);}}),
-      cfg.hours?h('label',{class:'row small',style:'gap:6px'},h('input',{type:'checkbox',checked:A.otAll!==false,onchange:e=>{A.otAll=e.target.checked;}}),'신청 없는 직원도 현황표에 넣기'):null),
+      null),
     list.length?h('div',{class:'tbl'},h('table',{class:'t'},
       h('tr',{},h('th',{},h('input',{type:'checkbox','aria-label':'모두 고르기',checked:list.length>0&&list.every(d=>A.pick.has(d.id)),onchange:e=>{for(const d of list)e.target.checked?A.pick.add(d.id):A.pick.delete(d.id);render(true);}})),...['성명','소속','내용',cfg.hours?'시간':'금액','결재일',...(cfg.hours?['현황 결재']:['계좌번호','지급 결의'])].map(t=>h('th',{},t))),
       list.map(d=>{const [c,amt]=cfg.sum(d),g=msumIncluded(d.id);return h('tr',{},h('td',{},h('input',{type:'checkbox',checked:A.pick.has(d.id),onchange:e=>{e.target.checked?A.pick.add(d.id):A.pick.delete(d.id);render(true);}})),
@@ -2503,7 +2506,7 @@ const lastReject=d=>[...(d.log||[])].reverse().find(l=>l.st==='rejected')||null;
 const rejectText=l=>`${l.rjAt?dot(ymd(new Date(l.rjAt)))+' ':''}${l.by?nameK(l.by)+' ':''}반려${l.note?' — 사유: '+l.note:''}`;
 function mailStep(d,i,label){const s=(d.steps||[])[i];const rj=lastReject(d);if(s)mailKeys([s.key],rj?(label||'결재 요청')+' (재신청)':(label||'결재 요청'),d,rj?'재신청 문서예요. 이전 '+rejectText(rj):'');}
 function mailAfterDecide(d,e,v,hu,note){
-  if(v==='no')return mailKeys([d.author],'반려',d,note?`반려 사유: ${note}`:'');
+  if(v==='no')return mailKeys([d.author,d.proxyBy],'반려',d,note?`반려 사유: ${note}`:'');
   if(e.hugyeol)return mailKeys([d.author],'후결 완료',d);
   const steps=e.steps||[];
   if(hu)return mailKeys([steps[steps.length-1]?.key],'후결 요청 (먼저 시행됨)',d),mailKeys([d.author],'긴급 시행 (후결 대기)',d);
@@ -2627,6 +2630,11 @@ function hanWon(n){n=Math.round(Number(n)||0);if(!n)return '영';const dg='영�
 const wonText=n=>`일금 ${hanWon(n)}원정 ( ￦${won(n)} )`;
 const DOWK='일월화수목금토';
 const fmtDay=s=>{if(!s)return '';const d=parse(s);return `${d.getMonth()+1}/${d.getDate()}(${DOWK[d.getDay()]})`;};
+// 시각 고르기: 시(00~23)와 분(10분 단위) 두 칸
+const timeSel10=f=>(x,tr,upd)=>{const [hh,mm]=String(x[f]||'').split(':');const set=()=>{const a=hs.value,b=ms.value;x[f]=a!==''&&b!==''?`${a}:${b}`:'';upd();};
+  const hs=h('select',{'aria-label':(f==='from'?'시작':'종료')+' 시',onchange:()=>{if(hs.value!==''&&ms.value==='')ms.value='00';set();}},h('option',{value:''},'시'),Array.from({length:24},(_,i)=>pad(i)).map(v=>h('option',{value:v,selected:hh===v},v+'시')));
+  const ms=h('select',{'aria-label':(f==='from'?'시작':'종료')+' 분',onchange:set},h('option',{value:''},'분'),['00','10','20','30','40','50'].map(v=>h('option',{value:v,selected:mm!=null&&String(Math.floor(Number(mm)/10)*10).padStart(2,'0')===v&&hh!==undefined&&hh!==''},v+'분')));
+  return h('span',{class:'row',style:'gap:2px;flex-wrap:nowrap'},hs,ms);};
 function hoursOf(a,b){if(!a||!b)return 0;const [h1,m1]=a.split(':').map(Number),[h2,m2]=b.split(':').map(Number);let t=(h2*60+m2)-(h1*60+m1);if(t<0)t+=1440;return Math.round(t/6)/10;}
 function prevMonthPeriod(ym){if(!ym)return '';const [y,m]=ym.split('-').map(Number);const p=new Date(y,m-2,20),e=new Date(y,m-1,19);return `${ymd(p)} ~ ${ymd(e)}`;}
 const CONDOL=[['축의금','결혼','본인',500000],['축의금','결혼','자녀',500000],['축의금','출산','자녀 출산',500000],['축의금','수연','부모(본인·배우자) 회갑·칠순 중 각 1회',200000],['축의금','생일','본인',200000],
@@ -2668,7 +2676,7 @@ function nameStamp(k,size){const n=String(nameK(k)||'').replace(/\s/g,'');const 
   const txt=ch.length<=3?`<text x="50" y="${ch.length===2?58:50}" font-size="${ch.length===2?30:24}" text-anchor="middle" font-weight="700" fill="#d0021b" font-family="Malgun Gothic,sans-serif">${ch.join('').replace(/[<>&]/g,'')}</text><text x="50" y="80" font-size="20" text-anchor="middle" font-weight="700" fill="#d0021b" font-family="Malgun Gothic,sans-serif">${ch.length===2?'':'인'}</text>`:`<text x="50" y="58" font-size="20" text-anchor="middle" font-weight="700" fill="#d0021b" font-family="Malgun Gothic,sans-serif">${n.replace(/[<>&]/g,'')}</text>`;
   const svg=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="45" fill="none" stroke="#d0021b" stroke-width="6"/>${txt}</svg>`;
   return h('img',{class:'sig stamp-auto',src:'data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg),alt:nameK(k)+' 도장',style:`display:inline-block;height:${sz};width:${sz};vertical-align:middle;mix-blend-mode:multiply`});}
-const applicantSeal=d=>ev(d).status==='draft'?'(인)':(signImg(d.author,'display:inline-block;height:11mm;max-width:40mm;vertical-align:middle')||nameStamp(d.author));
+const applicantSeal=d=>ev(d).status==='draft'?'(인)':d.proxyBy&&R(d.proxyBy)?h('span',{},h('small',{style:'margin-right:4px'},`(대리 등록 ${nameK(d.proxyBy)})`),signImg(d.proxyBy,'display:inline-block;height:11mm;max-width:40mm;vertical-align:middle')||nameStamp(d.proxyBy)):(signImg(d.author,'display:inline-block;height:11mm;max-width:40mm;vertical-align:middle')||nameStamp(d.author));
 const signLine=(d,label='신 청 자')=>h('div',{style:'text-align:right;margin-top:8mm;font-size:11pt'},h('div',{},dot(d.draftDate||'')),h('div',{style:'margin-top:3mm'},`${label} :   `,h('b',{style:'letter-spacing:.3em'},nameK(d.author)),'   ',applicantSeal(d)));
 const smallNote=t=>h('p',{style:'font-size:9pt;margin:2mm 0 0'},t);
 const dateIn=(d,f,label,cls='f s1')=>h('label',{class:cls},label,h('input',{type:'date',id:'e_'+f,value:d[f]||'',oninput:e=>d[f]=e.target.value}));
@@ -2769,13 +2777,13 @@ const FORMS={
       h('div',{style:'height:3mm'}),kvTable([['비품상태',`이상내용 : ${d.state||''}`,'height:30mm;vertical-align:top'],['비 고',d.memo,'height:15mm;vertical-align:top']],24),
       h('div',{style:'display:flex;justify-content:space-between;margin-top:4mm;font-size:10.5pt'},h('span',{},'장비사용처 : '+(d.place||'')),h('span',{},'A/S소요기간 : '+(d.asDays||'')))])},
 
-  overtime:{label:'시간외근무신청서',short:'시간외',desc:'전월 20일~당월 19일, 근무시간 자동 합계',lv:()=>3,sig:['month','rows','account'],
+  overtime:{lvRule:'팀원은 팀장 전결, 팀장 이상은 상무 전결',label:'시간외근무신청서',short:'시간외',desc:'전월 20일~당월 19일, 근무시간 자동 합계 · 팀원 팀장 전결, 팀장 이상 상무 전결',lv:d=>lvl(d.author)>=1?3:1,sig:['month','rows','account'],
     init:d=>{const t=new Date();d.month=`${t.getFullYear()}-${pad(t.getMonth()+1)}`;d.rows=[{}];d.account='';},
     title:d=>`시간외근무신청 (${d.month?d.month.replace('-','년 ')+'월':''}) ${nameK(d.author)}`,
     check:d=>!(d.rows||[]).some(x=>x.day)?'근무일을 넣어 주세요.':null,
     edit(d,form){const tot=h('b',{class:'total'}),per=h('span',{class:'small muted'});const upd=()=>{tot.textContent=sumBy(d.rows,x=>hoursOf(x.from,x.to))+'시간';per.textContent='대상 기간 '+prevMonthPeriod(d.month);};
       form.append(h('label',{class:'f'},'지급 월',h('input',{type:'month',id:'e_month',value:d.month||'',oninput:e=>{d.month=e.target.value;upd();}}),per),textIn(d,'account','지급계좌 (선택)','f s4'),
-        rowsEditor(d,'rows',[{f:'reason',t:'사유',ph:'예: 야간진료'},{f:'day',t:'근무일',type:'date',w:140},{f:'place',t:'근무장소',ph:'예: 서울의원',w:120},{f:'from',t:'시작',type:'time',w:110},{f:'to',t:'종료',type:'time',w:110},{t:'계(시간)',calc:x=>hoursOf(x.from,x.to)||''}],upd),
+        rowsEditor(d,'rows',[{f:'reason',t:'사유',ph:'예: 야간진료'},{f:'day',t:'근무일',type:'date',w:140},{f:'place',t:'근무장소',ph:'예: 서울의원',w:120},{f:'from',t:'시작',render:timeSel10('from')},{f:'to',t:'종료',render:timeSel10('to')},{t:'계(시간)',calc:x=>hoursOf(x.from,x.to)||''}],upd),
         h('div',{class:'f s6',style:'align-items:flex-end'},h('span',{},'합계 ',tot)),h('p',{class:'muted small f s6',style:'margin:0'},'기간: 전월 20일 ~ 당월 19일까지'));upd();},
     paper:d=>{const rows=(d.rows||[]).filter(x=>x.day);return formPaper(d,'시 간 외 근 무 신 청 서',[
       kvTable([['부    서',d.team||R(d.author)?.team||''],['성    명',nameK(d.author)],['기    간',prevMonthPeriod(d.month)]],24),
