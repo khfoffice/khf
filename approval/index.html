@@ -656,7 +656,7 @@ td.nw{white-space:nowrap;font-variant-numeric:tabular-nums}
 </div>
 <script>
 /* ================= 프로그램 버전 (고칠 때마다 올림) ================= */
-const APP_VER='2026.11.20 (v55)';
+const APP_VER='2026.11.20 (v56)';
 (function(){const put=()=>{const el=document.getElementById('appVer');if(el)el.textContent='버전 '+APP_VER;};put();document.addEventListener('DOMContentLoaded',put);
   // M365 버전: 서버에 새 버전이 올라왔는지 확인 (열 때 + 30분마다)
   // 새 버전이 올라와 있으면 '업데이트 중' 화면을 보여 주고 자동으로 새 버전을 연다 (작성 중인 글이 있으면 끝날 때까지 기다림)
@@ -2809,7 +2809,7 @@ const FORMS={
         h('tr',{},h('th',{colspan:4},'합  계'),h('td',{class:'r',style:'font-weight:700'},sumBy(rows,x=>hoursOf(x.from,x.to))+'시간'))),
       d.account?smallNote(' * 지급계좌 : '+d.account):null,signLine(d,'신청인')]);}},
 
-  allow:{label:'가정간호방문·당직·행사지원수당 신청서',short:'수당(월간)',desc:'가정간호 4만원, 당직 평일 6만·토 9만·휴일 12만, 행사지원 시간당 자동',lv:()=>3,sig:['month','rows','account','memo'],amount:d=>sumBy(d.rows,x=>x.amount),
+  allow:{label:'가정간호방문·당직·행사지원수당 신청서',short:'수당(월간)',desc:'가정간호 4만원, 당직 평일 6만·토 9만·휴일 12만, 행사지원 시간당 자동 · 팀원 팀장 전결, 팀장 이상 상무 전결',lv:d=>lvl(d.author)>=1?3:1,sig:['month','rows','account','memo'],amount:d=>sumBy(d.rows,x=>x.amount),
     init:d=>{const t=new Date();d.month=`${t.getFullYear()}-${pad(t.getMonth()+1)}`;d.rows=[{kind:'가정간호',amount:40000}];d.account='';d.memo='';},
     title:d=>`가정간호방문·당직·행사지원수당 신청 (${d.month?d.month.replace('-','년 ')+'월':''}) ${nameK(d.author)}`,
     check:d=>!(d.rows||[]).some(x=>Number(x.amount)>0)?'수당 내역을 넣어 주세요.':(d.rows||[]).some(x=>x.kind==='행사지원'&&(x.day||Number(x.amount))&&!(Number(x.hours)>0))?'행사지원은 시작·끝 시간을 골라 주세요.':null,
@@ -2828,7 +2828,7 @@ const FORMS={
       form.append(h('label',{class:'f'},'신청 월',h('input',{type:'month',id:'e_month',value:d.month||'',oninput:e=>d.month=e.target.value})),textIn(d,'account','지급계좌 (선택)','f s4'),
         rowsEditor(d,'rows',[{f:'kind',t:'구분',opts:['가정간호','당직','행사지원'],def:'가정간호',on:onKind},{f:'day',t:'일자',type:'date',w:140,on:onDay},{f:'time',t:'시간 (당직·행사지원)',render:timeCell},{f:'content',t:'내용',ph:'예: 안산·시흥 방문 (환자 실명 대신 등록번호)'},{f:'amount',t:'금액(원)',type:'number',w:110}],upd),
         h('div',{class:'f s6',style:'align-items:flex-end'},h('span',{},'합계 ',tot)),textIn(d,'memo','비고','f s6'),
-        h('p',{class:'muted small f s6',style:'margin:0'},'당월 근무분을 말일까지 작성해 익월 1~2일(평일)에 올려 주세요. 가정간호 방문 4만원/회, 당직 평일 6만원·토요일 9만원·휴일 12만원은 자동으로 들어가요. 당직 시간은 평일 18시~익일 08시 · 토요일 14시~익일 09시 · 휴일 09시~익일 09시 중에서 고르고(공휴일은 휴일), 행사지원수당은 시작·끝 시간을 고르면 4시간까지 6만원, 넘는 시간마다 1만5천원씩 더해 최대 12만원까지 자동으로 들어가요.'));upd();},
+        h('p',{class:'muted small f s6',style:'margin:0'},'가정간호 방문 4만원/회, 당직 평일 6만원·토요일 9만원·휴일 12만원은 자동으로 들어가요. 당직 시간은 평일 18시~익일 08시 · 토요일 14시~익일 09시 · 휴일 09시~익일 09시 중에서 고르고(공휴일은 휴일), 행사지원수당은 시작·끝 시간을 고르면 4시간까지 6만원, 넘는 시간마다 1만5천원씩 더해 최대 12만원까지 자동으로 들어가요.'));upd();},
     paper:d=>{const rows=(d.rows||[]).filter(x=>x.day||Number(x.amount));return formPaper(d,'가정간호방문/당직/행사지원수당 신청서',[
       kvTable([['직    책',R(d.author)?.pos||''],['성    명',nameK(d.author)],['항    목','가정방문 출장 / 당직수당 / 행사지원수당'],['금    액',won(sumBy(rows,x=>x.amount))+'원'],['신청 월',d.month?d.month.replace('-','년 ')+'월':'']],24),
       h('table',{class:'items',style:'margin-top:3mm'},h('colgroup',{},['20mm','40mm','','24mm'].map(w=>h('col',w?{style:'width:'+w}:{}))),
