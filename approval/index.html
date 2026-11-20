@@ -656,7 +656,7 @@ td.nw{white-space:nowrap;font-variant-numeric:tabular-nums}
 </div>
 <script>
 /* ================= 프로그램 버전 (고칠 때마다 올림) ================= */
-const APP_VER='2026.11.19 (v54)';
+const APP_VER='2026.11.20 (v55)';
 (function(){const put=()=>{const el=document.getElementById('appVer');if(el)el.textContent='버전 '+APP_VER;};put();document.addEventListener('DOMContentLoaded',put);
   // M365 버전: 서버에 새 버전이 올라왔는지 확인 (열 때 + 30분마다)
   // 새 버전이 올라와 있으면 '업데이트 중' 화면을 보여 주고 자동으로 새 버전을 연다 (작성 중인 글이 있으면 끝날 때까지 기다림)
@@ -2688,7 +2688,13 @@ const applicantSeal=d=>ev(d).status==='draft'?'(인)':d.proxyBy&&R(d.proxyBy)?h(
 const signLine=(d,label='신 청 자')=>h('div',{style:'text-align:right;margin-top:8mm;font-size:11pt'},h('div',{},dot(d.draftDate||'')),h('div',{style:'margin-top:3mm'},`${label} :   `,h('b',{style:'letter-spacing:.3em'},nameK(d.author)),'   ',applicantSeal(d)));
 const smallNote=t=>h('p',{style:'font-size:9pt;margin:2mm 0 0'},t);
 const dateIn=(d,f,label,cls='f s1')=>h('label',{class:cls},label,h('input',{type:'date',id:'e_'+f,value:d[f]||'',oninput:e=>d[f]=e.target.value}));
-const textIn=(d,f,label,cls='f',ph='',after)=>h('label',{class:cls},label,h('input',{id:'e_'+f,value:d[f]||'',placeholder:ph,oninput:e=>{d[f]=e.target.value;after&&after();}}));
+const textIn=(d,f,label,cls='f',ph='',after)=>f==='account'?acctIn(d,label,cls,ph,after):h('label',{class:cls},label,h('input',{id:'e_'+f,value:d[f]||'',placeholder:ph,oninput:e=>{d[f]=e.target.value;after&&after();}}));
+// 지급계좌: 브라우저 자동완성에 기대지 않고, 신청인이 예전에 올린 신청서의 계좌를 골라 넣을 수 있게 (따로 저장하지 않음)
+function pastAccounts(key){const seen=new Set(),out=[];for(const x of Object.values(S.docs).filter(x=>x.author===key&&!x.deleted&&!x._lazy&&!x._locked&&String(x.account||'').trim()).sort((a,b)=>(b.updatedAt||b.createdAt||0)-(a.updatedAt||a.createdAt||0))){const a=String(x.account).trim();const k=a.replace(/\s+/g,'');if(seen.has(k))continue;seen.add(k);out.push(a);if(out.length>=5)break;}return out;}
+function acctIn(d,label,cls,ph,after){const lid='acct_'+Math.random().toString(36).slice(2,8);const accs=pastAccounts(d.author);
+  const inp=h('input',{id:'e_account',value:d.account||'',placeholder:ph,list:accs.length?lid:null,autocomplete:'off',oninput:e=>{d.account=e.target.value;after&&after();}});
+  return h('label',{class:cls},label,inp,accs.length?h('datalist',{id:lid},accs.map(a=>h('option',{value:a}))):null,
+    accs.length?h('span',{class:'row small',style:'gap:4px;flex-wrap:wrap;margin-top:4px'},h('span',{class:'muted'},'이전 계좌:'),accs.map(a=>h('button',{type:'button',class:'btn ghost sm',style:'padding:2px 8px',onclick:e=>{e.preventDefault();inp.value=a;d.account=a;after&&after();}},a))):null);}
 const areaIn=(d,f,label,cls='f s6',ph='',rows=3)=>h('label',{class:cls},label,h('textarea',{id:'e_'+f,rows,value:d[f]||'',placeholder:ph,oninput:e=>d[f]=e.target.value}));
 function myPrevSubsidy(d){const yr=Number((d.draftDate||TODAY()).slice(0,4));return Object.values(S.docs).filter(x=>x.kind==='subsidy'&&x.id!==d.id&&!x.deleted&&x.author===d.author&&x.stype===d.stype&&Number((x.draftDate||'').slice(0,4))===yr&&ev(x).status==='approved').reduce((a,x)=>a+(Number(x.amount)||0),0);}
 
@@ -2791,8 +2797,9 @@ const FORMS={
     check:d=>!(d.rows||[]).some(x=>x.day)?'근무일을 넣어 주세요.':null,
     edit(d,form){const tot=h('b',{class:'total'}),per=h('span',{class:'small muted'});const upd=()=>{tot.textContent=sumBy(d.rows,x=>hoursOf(x.from,x.to))+'시간';per.textContent='대상 기간 '+prevMonthPeriod(d.month);};
       form.append(h('label',{class:'f'},'지급 월',h('input',{type:'month',id:'e_month',value:d.month||'',oninput:e=>{d.month=e.target.value;upd();}}),per),textIn(d,'account','지급계좌 (선택)','f s4'),
-        rowsEditor(d,'rows',[{f:'reason',t:'사유',ph:'예: 야간진료'},{f:'day',t:'근무일',type:'date',w:140},{f:'place',t:'근무장소',ph:'예: 서울의원',w:120},{f:'from',t:'시작',render:timeSel10('from')},{f:'to',t:'종료',render:timeSel10('to')},{t:'계(시간)',calc:x=>hoursOf(x.from,x.to)||''}],upd),
-        h('div',{class:'f s6',style:'align-items:flex-end'},h('span',{},'합계 ',tot)),h('p',{class:'muted small f s6',style:'margin:0'},'기간: 전월 20일 ~ 당월 19일까지'));upd();},
+        h('datalist',{id:'otReasons'},['야간진료','방문진료','청구소견서 작성','행사 지원'].map(x=>h('option',{value:x}))),
+        rowsEditor(d,'rows',[{f:'reason',t:'사유',ph:'예: 야간진료',list:'otReasons',on:(x,tr)=>{if(String(x.reason||'').trim()==='야간진료'){x.place='서울의원';x.from='17:30';x.to='20:30';const pl=tr.querySelector('[data-f=place]');if(pl)pl.value=x.place;(tr._re||[]).forEach(f=>f());}}},{f:'day',t:'근무일',type:'date',w:140},{f:'place',t:'근무장소',ph:'예: 서울의원',w:120},{f:'from',t:'시작',render:timeSel10('from')},{f:'to',t:'종료',render:timeSel10('to')},{t:'계(시간)',calc:x=>hoursOf(x.from,x.to)||''}],upd),
+        h('div',{class:'f s6',style:'align-items:flex-end'},h('span',{},'합계 ',tot)),h('p',{class:'muted small f s6',style:'margin:0'},'기간: 전월 20일 ~ 당월 19일까지 · 사유에 "야간진료"를 고르면 근무장소 서울의원, 17시 30분 ~ 20시 30분(3시간)이 자동으로 들어가요.'));upd();},
     paper:d=>{const rows=(d.rows||[]).filter(x=>x.day);return formPaper(d,'시 간 외 근 무 신 청 서',[
       kvTable([['부    서',d.team||R(d.author)?.team||''],['성    명',nameK(d.author)],['기    간',prevMonthPeriod(d.month)]],24),
       h('table',{class:'items',style:'margin-top:3mm'},h('colgroup',{},['10mm','','26mm','28mm','30mm','16mm'].map(w=>h('col',w?{style:'width:'+w}:{}))),
