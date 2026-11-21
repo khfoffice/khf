@@ -229,6 +229,7 @@ button.file{font:inherit;font-size:12.5px;cursor:pointer}
 .wk .card .wy{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .wk tfoot td{background:var(--bg);font-weight:600;text-align:center;font-variant-numeric:tabular-nums;vertical-align:middle}
 .wk tfoot td.nm{background:var(--bg);text-align:left}
+.linkbtn{border:0;background:none;color:var(--accent);cursor:pointer;font-size:12.5px;padding:0 0 0 6px;text-decoration:underline}
 .linecard{border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:12px}
 .linecard h3{margin:14px 0 6px;font-size:13px;color:var(--muted);font-weight:500}
 .steps{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
@@ -255,7 +256,7 @@ button.file{font:inherit;font-size:12.5px;cursor:pointer}
   <header class="top">
     <div>
       <h1>재단 휴가 관리</h1>
-      <p class="sub" id="who">불러오는 중…</p>
+      <p class="sub"><span id="who">불러오는 중…</span> <button type="button" id="acctSwitch" class="linkbtn hidden" title="다른 Microsoft 365 계정으로 로그인">계정 전환</button></p><p class="hidden"></p>
     </div>
     <nav class="tabs" role="tablist" id="tabs">
       <button role="tab" data-tab="mine" aria-selected="true">내 휴가</button>
@@ -637,7 +638,7 @@ button.file{font:inherit;font-size:12.5px;cursor:pointer}
       </section>
     </div>
   </div>
-<div class="muted small" style="text-align:center;margin-top:24px">프로그램 버전 2026.11.19-4</div>
+<div class="muted small" style="text-align:center;margin-top:24px">프로그램 버전 2026.11.21-1</div>
 </div>
 <script>
 /* ===== 재단 Microsoft 365 연결 정보 ===== */
@@ -952,6 +953,7 @@ function(e){return e.hasOwnProperty("authorization_endpoint")&&e.hasOwnProperty(
       const base=full.find(it=>it.fields.Title===id); return base?parseData(base.fields.Data,full,id):null;
     }
   };
+  window.__logout=()=>{try{localStorage.clear();}catch{}MS.logoutRedirect({account:ACC,postLogoutRedirectUri:A.redirectUri||location.origin+location.pathname});};
   window.__fileUrl=async(id,meta={})=>{
     let it=await gx('GET',`/sites/${SITE}/drive/items/${id}?$select=id,name,webUrl`);
     // 예전 버전이 '.bin'처럼 확장자 없이 올린 파일은 원래 확장자로 이름을 고쳐야 SharePoint가 미리 보여 줘요
@@ -998,8 +1000,6 @@ function(e){return e.hasOwnProperty("authorization_endpoint")&&e.hasOwnProperty(
     }
   }
   (async()=>{
-    // 잘못된 자리에 올린 경우 막기: 휴가 관리는 저장소 맨 위(…/khf/)에서만 열린다. approval 폴더는 전자결재 자리
-    if(/github\.io$/.test(location.hostname)&&/\/approval\//.test(location.pathname)){window.__wrongPlace=true;gate('파일을 잘못된 자리에 올렸어요','<p class="err">이 파일은 <b>휴가 관리</b> 프로그램이에요. GitHub 저장소 <b>맨 위</b>(index.html)에 있어야 하는데, 지금 <b>전자결재 자리(approval 폴더)</b>에 올라가 있어요.</p><p>GitHub에서 approval 폴더의 index.html › <b>History</b> › 바로 전 버전으로 되돌려 주세요. 데이터는 지워지지 않았어요.</p>');return;}
     if(!A.clientId||!A.tenantId){gate('연결 정보가 필요해요','<p>파일 맨 위 APP_CONFIG를 확인해 주세요.</p>');return;}
     if(typeof msal==='undefined'){gate('로그인 모듈을 불러오지 못했어요','<p>파일을 다시 올려 주세요.</p>');return;}
     gate('불러오는 중…','<p>Microsoft 365에 연결하고 있어요.</p>');
@@ -2483,6 +2483,7 @@ async function downloadBackup(id){
 $('bkNow').addEventListener('click',()=>runBackup(true));
 setInterval(()=>{if(S.isAdmin&&S.hrOK&&!bkDone)autoBackup();},10000);
 $('impFile').addEventListener('change',e=>{const f=e.target.files[0];e.target.value='';if(f)importAll(f);});
+if(window.__logout){const b=$('acctSwitch');b.classList.remove('hidden');b.onclick=()=>{if(confirm('로그아웃하고 다른 계정으로 로그인할까요?'))window.__logout();};}
 $('ordReset').addEventListener('click',()=>writeConfig(c=>{delete c.order;}).catch(writeErr));
 $('addPos').addEventListener('click',()=>savePos(l=>{let k=1,nm='새 직위';while(l.some(p=>p.name===nm))nm='새 직위 '+(++k);l.push({name:nm,level:0});}));
 function renderLines(){
