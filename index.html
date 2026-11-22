@@ -230,6 +230,16 @@ button.file{font:inherit;font-size:12.5px;cursor:pointer}
 .wk tfoot td{background:var(--bg);font-weight:600;text-align:center;font-variant-numeric:tabular-nums;vertical-align:middle}
 .wk tfoot td.nm{background:var(--bg);text-align:left}
 .linkbtn{border:0;background:none;color:var(--accent);cursor:pointer;font-size:12.5px;padding:0 0 0 6px;text-decoration:underline}
+.ds-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.ds-kpi{border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:var(--bg)}
+.ds-kpi .k{font-size:12px;color:var(--muted)} .ds-kpi .v{font-size:22px;font-weight:700;margin-top:2px;font-variant-numeric:tabular-nums} .ds-kpi .c{font-size:12px;color:var(--muted);margin-top:2px}
+.ds td{vertical-align:middle} .ds tr.me td{background:var(--accent-soft)} .ds tr.tot td{font-weight:700;background:var(--bg)}
+.pbar{position:relative;height:9px;background:var(--cell);border-radius:5px;min-width:90px}
+.pbar i{position:absolute;left:0;top:0;bottom:0;border-radius:5px;background:var(--accent)} .pbar i.over{background:var(--warn)}
+.pbar b{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--bad);opacity:.7}
+.pct{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.st{display:inline-block;font-size:12px;padding:1px 8px;border-radius:10px;border:1px solid}
+.st.low{color:var(--bad);border-color:var(--bad)} .st.high{color:var(--warn);border-color:var(--warn)} .st.ok{color:var(--ok);border-color:var(--ok)}
 .linecard{border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:12px}
 .linecard h3{margin:14px 0 6px;font-size:13px;color:var(--muted);font-weight:500}
 .steps{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
@@ -262,6 +272,7 @@ button.file{font:inherit;font-size:12.5px;cursor:pointer}
       <button role="tab" data-tab="mine" aria-selected="true">내 휴가</button>
       <button role="tab" data-tab="inbox" aria-selected="false" class="hidden">결재함<span class="count hidden" id="inboxCount"></span></button>
       <button role="tab" data-tab="cal" aria-selected="false">팀 캘린더</button>
+      <button role="tab" data-tab="dash" aria-selected="false" class="hidden">현황판</button>
       <button role="tab" data-tab="admin" aria-selected="false" class="hidden">관리</button>
     </nav>
   </header>
@@ -424,6 +435,39 @@ button.file{font:inherit;font-size:12.5px;cursor:pointer}
   </div>
 
   <!-- 관리 -->
+  <div data-view="dash" class="hidden">
+    <section class="panel">
+      <div class="row between" style="margin-bottom:6px">
+        <h2 style="margin:0" id="dsTitle">휴가 사용 현황판</h2>
+        <select id="dsFy" style="width:auto"></select>
+      </div>
+      <p class="muted small" id="dsPace" style="margin:0 0 14px"></p>
+      <div class="ds-kpis" id="dsKpis"></div>
+    </section>
+    <section class="panel">
+      <div class="row between" style="margin-bottom:10px"><h2 style="margin:0">팀별 비교</h2><span class="muted small" id="dsTeamNote"></span></div>
+      <div class="tbl-wrap"><table class="ds">
+        <thead><tr><th>팀</th><th class="num">인원</th><th class="num">연차 발생</th><th class="num">사용</th><th style="min-width:150px">연차 사용률</th><th class="num">미사용률</th><th class="num">대체 부여</th><th class="num">대체 사용</th><th class="num">대체 사용률</th><th class="num">부진</th><th class="num">과다</th><th></th></tr></thead>
+        <tbody id="dsTeams"></tbody>
+      </table></div>
+    </section>
+    <section class="panel">
+      <div class="row between" style="margin-bottom:10px;gap:10px;flex-wrap:wrap">
+        <h2 style="margin:0" id="dsPeopleTitle">인원별 현황</h2>
+        <div class="row" style="gap:10px">
+          <label class="row small muted" style="gap:6px" id="dsTeamFW">팀 <select id="dsTeam" style="width:auto"></select></label>
+          <label class="row small muted" style="gap:6px">상태 <select id="dsSt" style="width:auto"><option value="">전체</option><option value="부진">부진</option><option value="과다">과다·미리 사용</option><option value="적정">적정</option></select></label>
+          <label class="row small muted" style="gap:6px">정렬 <select id="dsSort" style="width:auto"><option value="order">직원 순서</option><option value="pctAsc">사용률 낮은 순</option><option value="pctDesc">사용률 높은 순</option><option value="remain">잔여 많은 순</option></select></label>
+          <button class="btn sm" id="dsBulk" type="button" disabled>선택한 사람에게 촉진 메일</button>
+        </div>
+      </div>
+      <div class="tbl-wrap"><table class="ds">
+        <thead><tr><th><input type="checkbox" id="dsAll" style="width:auto" aria-label="모두 선택"></th><th>직원</th><th>팀</th><th class="num">연차 발생</th><th class="num">사용</th><th class="num">결재 중</th><th class="num">잔여</th><th style="min-width:140px">사용률</th><th class="num">미사용률</th><th class="num">대체 부여·사용·잔여</th><th>상태</th><th>최근 촉진</th><th></th></tr></thead>
+        <tbody id="dsPeople"></tbody>
+      </table></div>
+      <p class="muted small" style="margin:10px 0 0">기준: <b>부진</b> = 연차 사용률이 연도 경과율의 절반보다 낮고 잔여가 5일 이상 · <b>과다</b> = 사용률이 연도 경과율보다 30%p 넘게 높거나 다음연도 연차를 미리 사용. 사용률은 올해 전체 발생 연차(앞으로 발생할 분 포함) 기준이에요.</p>
+    </section>
+  </div>
   <div data-view="admin" class="hidden">
     <div class="seg" id="adminSeg" style="max-width:640px;margin-bottom:16px"></div>
 
@@ -638,7 +682,7 @@ button.file{font:inherit;font-size:12.5px;cursor:pointer}
       </section>
     </div>
   </div>
-<div class="muted small" style="text-align:center;margin-top:24px">프로그램 버전 2026.11.21-1</div>
+<div class="muted small" style="text-align:center;margin-top:24px">프로그램 버전 2026.11.21-2</div>
 </div>
 <script>
 /* ===== 재단 Microsoft 365 연결 정보 ===== */
@@ -2691,13 +2735,14 @@ async function doRender(){
   const tabs=$('tabs');
   tabs.querySelector('[data-tab="admin"]').classList.toggle('hidden',!S.isAdmin);
   tabs.querySelector('[data-tab="inbox"]').classList.toggle('hidden',!showInbox);
+  const showDash=!!dashScope(); tabs.querySelector('[data-tab="dash"]').classList.toggle('hidden',!showDash);
   const cnt=S.me?inboxItems().length:0; $('inboxCount').textContent=cnt;
   document.title=(cnt?`(${cnt}) `:'')+'재단 휴가 관리';
   const bn=$('apvBanner'); const myLate=S.me?inboxItems().filter(r=>waitInfo(r)?.bad).length:0; const allLate=S.isAdmin?overdueAll().length:0;
   if(cnt&&S.tab!=='inbox'){bn.className='banner'+(myLate?' late':'');bn.replaceChildren(h('span',{},myLate?'⏰ ':'🔔 ',h('b',{},`결재할 신청이 ${cnt}건 있어요.`),myLate?` 이 중 ${myLate}건은 늦어지고 있거나 휴가일이 코앞이에요.`:''),h('button',{class:'btn sm',type:'button',onclick:()=>{S.tab='inbox';render();}},'결재함 열기'));}
   else if(allLate&&!(S.tab==='admin'&&S.sub==='requests')){bn.className='banner late';bn.replaceChildren(h('span',{},'⏰ ',h('b',{},`결재가 늦어진 신청이 ${allLate}건 있어요.`),' 결재자에게 확인하거나 관리자가 바로 처리할 수 있어요.'),h('button',{class:'btn sm',type:'button',onclick:()=>{S.tab='admin';S.sub='requests';render();}},'신청 내역 보기'));}
   else bn.className='banner hidden'; $('inboxCount').classList.toggle('hidden',!cnt);
-  if((S.tab==='admin'&&!S.isAdmin)||(S.tab==='inbox'&&!showInbox)) S.tab='mine';
+  if((S.tab==='admin'&&!S.isAdmin)||(S.tab==='inbox'&&!showInbox)||(S.tab==='dash'&&!showDash)) S.tab='mine';
   tabs.querySelectorAll('button').forEach(b=>b.setAttribute('aria-selected',String(b.dataset.tab===S.tab)));
   document.querySelectorAll('[data-view]').forEach(v=>v.classList.toggle('hidden',v.dataset.view!==S.tab));
   if(S.me){$('who').textContent=`${PS[S.me]?.name||'직원'}님 · ${[posAt(S.me,TODAY),P(S.me).team].filter(Boolean).join(' · ')}${S.isAdmin?' · 관리자':''}`;}
@@ -2706,6 +2751,118 @@ async function doRender(){
   if(S.tab==='inbox') renderInbox();
   if(S.tab==='cal') renderCal();
   if(S.tab==='admin') renderAdmin();
+  if(S.tab==='dash') renderDash();
+}
+/* ---------- 현황판 (팀장: 자기 팀 상세 + 팀 비교 / 국장 이상·관리자: 전체) ---------- */
+const dd=v=>{const x=Math.round(v/HPD()*10)/10;return String(x);};
+function dashScope(){
+  if(!S.me) return null; const r=rank(posAt(S.me,TODAY));
+  if(S.isAdmin||r>=2) return {all:true};
+  if(r===1) return {team:P(S.me).team||''};
+  return null;
+}
+function dashPace(fy){const a=fyStart(fy),b=fyEnd(fy);if(TODAY<a)return 0;if(TODAY>b)return 1;return (dayDiff(a,TODAY)+1)/(dayDiff(a,b)+1);}
+function dashRow(x,fy,pace){
+  const a=pool(x.u,fy,'annual'), c=pool(x.u,fy,'comp');
+  const total=a.granted+a.sched, used=a.used, pct=total>0?used/total:0;
+  let st='적정'; if(a.advanced>0||(total>=HPD()&&pct>pace+0.3)) st='과다'; else if(total>0&&pct<pace*0.5&&total-used>=5*HPD()) st='부진';
+  return {x,u:x.u,name:x.name,team:x.team||'소속 미정',total,used,pend:a.pend,remain:total-used,pct,adv:a.advanced||0,cg:c.granted+c.sched,cu:c.used,cr:c.granted+c.sched-c.used,st};
+}
+function lastPush(key){let best=null;for(const [by,d] of Object.entries(S.decisions||{}))for(const p of (d.push||[]))if(p.to===key&&(!best||p.at>best.at))best={...p,by};return best;}
+function pbar(pct,pace){return h('div',{},h('div',{class:'pbar',title:`사용률 ${Math.round(pct*100)}% · 연도 경과 ${Math.round(pace*100)}%`},h('i',{class:pct>pace+0.3?'over':'',style:`width:${Math.min(100,Math.round(pct*100))}%`}),h('b',{style:`left:${Math.round(pace*100)}%`})),h('span',{class:'pct'},`${Math.round(pct*100)}%`));}
+const stBadge=st=>h('span',{class:'st '+(st==='부진'?'low':st==='과다'?'high':'ok')},st);
+function renderDash(){
+  const sc=dashScope(); if(!sc) return; const fy=S.fy??fyOf(TODAY), pace=dashPace(fy);
+  const fs=$('dsFy'); if(document.activeElement!==fs){const cur=fyOf(TODAY);fs.replaceChildren(...[cur,cur-1,cur-2].map(f=>h('option',{value:f,selected:f===fy},fyLabel(f))));fs.onchange=e=>{S.fy=Number(e.target.value);render();};}
+  $('dsPace').textContent=`${fyLabel(fy)} 기준 · 오늘까지 연도 경과 ${Math.round(pace*100)}% (막대의 빨간 선) · `+(sc.all?'전체 직원과 팀을 볼 수 있어요.':`${sc.team} 팀원 상세와 팀별 비교를 볼 수 있어요.`);
+  const rows=staffRows().filter(x=>!(x.end&&x.end<fyStart(fy))&&!(x.hire&&x.hire>fyEnd(fy))).map(x=>dashRow(x,fy,pace));
+  const agg=list=>{const t=list.reduce((o,r)=>{o.n++;o.total+=r.total;o.used+=r.used;o.remain+=r.remain;o.cg+=r.cg;o.cu+=r.cu;if(r.st==='부진')o.low++;if(r.st==='과다')o.high++;return o;},{n:0,total:0,used:0,remain:0,cg:0,cu:0,low:0,high:0});t.pct=t.total?t.used/t.total:0;t.cpct=t.cg?t.cu/t.cg:0;return t;};
+  const all=agg(rows), mine=sc.all?all:agg(rows.filter(r=>r.team===sc.team));
+  const kpi=(k,v,c)=>h('div',{class:'ds-kpi'},h('div',{class:'k'},k),h('div',{class:'v'},v),c?h('div',{class:'c'},c):null);
+  const cmp=(a,b)=>sc.all?'':`전체 ${b}`;
+  $('dsTitle').textContent=sc.all?'휴가 사용 현황판 (전체)':`휴가 사용 현황판 · ${sc.team}`;
+  $('dsKpis').replaceChildren(
+    kpi('인원',`${mine.n}명`,sc.all?`팀 ${new Set(rows.map(r=>r.team)).size}개`:`전체 ${all.n}명`),
+    kpi('연차 사용률',`${Math.round(mine.pct*100)}%`,sc.all?`연도 경과 ${Math.round(pace*100)}%`:`전체 ${Math.round(all.pct*100)}% · 경과 ${Math.round(pace*100)}%`),
+    kpi('1인 평균 잔여 연차',`${dd(mine.n?mine.remain/mine.n:0)}일`,cmp(0,`${dd(all.n?all.remain/all.n:0)}일`)),
+    kpi('대체휴가 사용률',`${Math.round(mine.cpct*100)}%`,`부여 ${dd(mine.cg)}일 중 ${dd(mine.cu)}일`+(sc.all?'':` · 전체 ${Math.round(all.cpct*100)}%`)),
+    kpi('사용 부진',`${mine.low}명`,cmp(0,`${all.low}명`)),
+    kpi('과다·미리 사용',`${mine.high}명`,cmp(0,`${all.high}명`)));
+  // 팀별 비교
+  const teams=[...new Set(rows.map(r=>r.team))]; const firstIdx={}; rows.slice().sort((a,b)=>cmpPeople(a.u,b.u)).forEach((r,i)=>{if(!(r.team in firstIdx))firstIdx[r.team]=i;}); teams.sort((a,b)=>firstIdx[a]-firstIdx[b]);
+  const tb=$('dsTeams'); tb.replaceChildren();
+  for(const t of teams){const g=agg(rows.filter(r=>r.team===t)); let lead=rows.find(r=>r.team===t&&posAt(r.u,TODAY)==='팀장');
+    if(!lead){const m=rows.find(r=>r.team===t), st=m&&chainFor(m.u)[0];const pu=st&&typeof st==='object'?idOfName(st.p):null;if(pu)lead={u:pu,name:nameOf(pu)};}   // 의원처럼 팀장이 없으면 첫 결재자(원장)에게
+    tb.append(h('tr',{class:t===sc.team?'me':''},h('td',{},t,t===sc.team?h('span',{class:'muted small'},' (우리 팀)'):null),h('td',{class:'num'},g.n),h('td',{class:'num'},dd(g.total)),h('td',{class:'num'},dd(g.used)),h('td',{},pbar(g.pct,pace)),h('td',{class:'num'},`${Math.round((1-g.pct)*100)}%`),
+      h('td',{class:'num'},dd(g.cg)),h('td',{class:'num'},dd(g.cu)),h('td',{class:'num'},`${Math.round(g.cpct*100)}%`),h('td',{class:'num'},g.low||''),h('td',{class:'num'},g.high||''),
+      h('td',{},sc.all&&lead?h('button',{class:'btn ghost sm',type:'button',title:`${lead.name}님에게 팀원 휴가 일정 분배 요청`,onclick:()=>openPush({team:t,lead,rows:rows.filter(r=>r.team===t)})},posAt(lead.u,TODAY)==='팀장'?'팀장에게 촉진':`${posAt(lead.u,TODAY)}에게 촉진`):(sc.all?h('span',{class:'muted small'},'팀장 없음'):null))));}
+  tb.append(h('tr',{class:'tot'},h('td',{},'전체'),h('td',{class:'num'},all.n),h('td',{class:'num'},dd(all.total)),h('td',{class:'num'},dd(all.used)),h('td',{},pbar(all.pct,pace)),h('td',{class:'num'},`${Math.round((1-all.pct)*100)}%`),h('td',{class:'num'},dd(all.cg)),h('td',{class:'num'},dd(all.cu)),h('td',{class:'num'},`${Math.round(all.cpct*100)}%`),h('td',{class:'num'},all.low||''),h('td',{class:'num'},all.high||''),h('td',{})));
+  $('dsTeamNote').textContent=sc.all?'':'다른 팀은 합계만 보여요.';
+  // 인원별
+  $('dsTeamFW').classList.toggle('hidden',!sc.all);
+  if(sc.all){const ts=$('dsTeam');if(document.activeElement!==ts){if(S.dsTeam&&!teams.includes(S.dsTeam))S.dsTeam='';ts.replaceChildren(h('option',{value:''},'전체'),...teams.map(t=>h('option',{value:t,selected:t===S.dsTeam},t)));ts.onchange=e=>{S.dsTeam=e.target.value;render();};}}
+  const stS=$('dsSt'); stS.value=S.dsSt||''; stS.onchange=e=>{S.dsSt=e.target.value;render();};
+  const soS=$('dsSort'); soS.value=S.dsSort||'order'; soS.onchange=e=>{S.dsSort=e.target.value;render();};
+  let list=rows.filter(r=>sc.all?(!S.dsTeam||r.team===S.dsTeam):r.team===sc.team).filter(r=>!S.dsSt||r.st===S.dsSt);
+  const so=S.dsSort||'order'; list.sort(so==='pctAsc'?(a,b)=>a.pct-b.pct:so==='pctDesc'?(a,b)=>b.pct-a.pct:so==='remain'?(a,b)=>b.remain-a.remain:(a,b)=>cmpPeople(a.u,b.u));
+  $('dsPeopleTitle').textContent=`인원별 현황 (${list.length}명)`;
+  S.dsSel=S.dsSel||new Set(); for(const k of [...S.dsSel]) if(!list.some(r=>r.u===k)) S.dsSel.delete(k);
+  const pb=$('dsPeople'); pb.replaceChildren();
+  for(const r of list){
+    const lp=lastPush(orderKeyOf(r.u)), mail=mailOfId(r.u);
+    pb.append(h('tr',{},h('td',{},h('input',{type:'checkbox',style:'width:auto',checked:S.dsSel.has(r.u),disabled:!mail,onchange:e=>{e.target.checked?S.dsSel.add(r.u):S.dsSel.delete(r.u);updBulk();}})),
+      h('td',{},personEl(r.u)),h('td',{},r.team),h('td',{class:'num'},dd(r.total)),h('td',{class:'num'},dd(r.used)),h('td',{class:'num'},r.pend?dd(r.pend):''),
+      h('td',{class:'num',style:r.remain<0?'color:var(--warn);font-weight:600':''},dd(r.remain)),h('td',{},pbar(r.pct,pace)),h('td',{class:'num'},`${Math.round((1-r.pct)*100)}%`),
+      h('td',{class:'num'},`${dd(r.cg)} · ${dd(r.cu)} · ${dd(r.cr)}`),h('td',{},stBadge(r.st),r.adv?h('div',{class:'small',style:'color:var(--warn)'},`미리 ${dd(r.adv)}일`):null),
+      h('td',{class:'small muted'},lp?`${fmtD(new Date(lp.at).toISOString().slice(0,10))} ${nameOf(lp.by)}`:''),
+      h('td',{},mail?h('button',{class:'btn ghost sm',type:'button',onclick:()=>openPush({people:[r]})},'촉진 메일'):h('span',{class:'muted small'},'메일 없음'))));
+  }
+  if(!list.length) pb.append(h('tr',{},h('td',{colspan:'13',class:'muted',style:'text-align:center;padding:16px'},'조건에 맞는 직원이 없어요.')));
+  const updBulk=()=>{const n=S.dsSel.size;$('dsBulk').disabled=!n;$('dsBulk').textContent=n?`선택한 ${n}명에게 촉진 메일`:'선택한 사람에게 촉진 메일';$('dsAll').checked=n>0&&n===list.filter(r=>mailOfId(r.u)).length;};
+  $('dsAll').onchange=e=>{for(const r of list) if(mailOfId(r.u)) e.target.checked?S.dsSel.add(r.u):S.dsSel.delete(r.u);render();};
+  $('dsBulk').onclick=()=>openPush({people:list.filter(r=>S.dsSel.has(r.u))});
+  updBulk();
+}
+function pushText(r){
+  const fy=S.fy??fyOf(TODAY), pct=Math.round(r.pct*100), pace=Math.round(dashPace(fy)*100);
+  if(r.st==='과다') return [`[휴가 사용 안내] ${r.name}님 연차 사용 현황`,`${r.name}님, ${fyLabel(fy)} 연차 ${dd(r.total)}일 중 ${dd(r.used)}일(사용률 ${pct}%)을 사용하셨어요.`+(r.adv?` 다음연도 연차 ${dd(r.adv)}일을 미리 사용 중이에요.`:'')+`\n연도 경과(${pace}%)에 비해 사용이 빠른 편이라, 남은 기간에는 업무 일정과 함께 계획적으로 사용해 주세요.`];
+  return [`[휴가 사용 촉진] ${r.name}님 연차 사용 안내`,`${r.name}님, ${fyLabel(fy)} 연차 ${dd(r.total)}일 중 ${dd(r.used)}일(사용률 ${pct}%)을 사용하셨고, 남은 연차는 ${dd(r.remain)}일이에요.`+(r.cr>0?` 대체휴가도 ${dd(r.cr)}일 남아 있어요.`:'')+`\n연도 경과(${pace}%)를 고려해 남은 기간 휴가 계획을 세워 신청해 주세요.`];
+}
+function openPush(o){
+  const sc=dashScope(); if(!sc) return;
+  let to, subject, body, logKey;
+  if(o.team){
+    const fy=S.fy??fyOf(TODAY), lines=o.rows.slice().sort((a,b)=>a.pct-b.pct).map(r=>`- ${r.name}: 잔여 ${dd(r.remain)}일, 사용률 ${Math.round(r.pct*100)}% (${r.st})`).join('\n');
+    to=[{u:o.lead.u,name:o.lead.name,mail:mailOfId(o.lead.u)}]; logKey='team:'+o.team;
+    subject=`[팀 휴가 사용 촉진] ${o.team} 팀원 휴가 일정 분배 요청`;
+    body=`${o.lead.name} ${posAt(o.lead.u,TODAY)}님, ${fyLabel(fy)} ${o.team} 휴가 사용 현황을 알려 드려요.\n\n${lines}\n\n사용이 부진한 팀원은 남은 기간 휴가 일정을 분배해 사용할 수 있도록 지도해 주시고, 사용이 많은 팀원은 계획적으로 사용하도록 안내해 주세요.`;
+  }else{
+    to=o.people.map(r=>({u:r.u,name:r.name,mail:mailOfId(r.u),r}));
+    if(to.length===1){[subject,body]=pushText(o.people[0]);} else {subject='[휴가 사용 촉진] 연차 사용 안내';body='(받는 사람마다 본인 현황이 담긴 안내문이 따로 가요.)';}
+  }
+  const subj=h('input',{type:'text',value:subject,disabled:!o.team&&to.length>1});
+  const ta=h('textarea',{rows:'9',style:'width:100%',disabled:!o.team&&to.length>1},body);
+  const msg=h('div',{class:'msg'});
+  const send=h('button',{class:'btn',type:'button',onclick:async()=>{
+    send.disabled=true; msg.className='msg'; msg.textContent='보내는 중…'; let ok=0, fail=[];
+    for(const t of to){
+      if(!t.mail){fail.push(t.name);continue;}
+      const [sj,bd]=o.team||to.length===1?[subj.value,ta.value]:pushText(t.r);
+      try{await window.__sendMail([t.mail],sj,bd+'\n\n휴가 관리: '+APP_URL);ok++;
+        await writeDoc('decisions/'+S.me,()=>S.decisions[S.me]||{d:{}},d=>{d.push=(d.push||[]).concat({to:o.team?logKey:orderKeyOf(t.u),kind:o.team?'team':'person',at:Date.now()}).slice(-300);});
+      }catch(e){console.warn(e);fail.push(t.name);}
+    }
+    msg.className=fail.length?'msg err':'msg good'; msg.textContent=`${ok}명에게 보냈어요.`+(fail.length?` 보내지 못함: ${fail.join(', ')}`:'');
+    if(!fail.length){S.dsSel=new Set();setTimeout(()=>{box.remove();render();},1200);} else send.disabled=false;
+  }},'보내기');
+  if(!window.__sendMail){send.disabled=true;msg.textContent='Microsoft 365 버전에서만 메일을 보낼 수 있어요.';}
+  const box=h('div',{class:'modal',onclick:e=>{if(e.target===box)box.remove();}},h('div',{class:'modal-card',style:'max-width:640px'},
+    h('div',{class:'row between',style:'margin-bottom:10px'},h('b',{},o.team?'팀장에게 휴가 일정 분배 요청':'휴가 사용 촉진 메일'),h('button',{class:'btn ghost sm',type:'button',onclick:()=>box.remove()},'닫기')),
+    h('div',{class:'small',style:'margin-bottom:8px'},'받는 사람: ',to.map(t=>`${t.name}${t.mail?'':'(메일 없음)'}`).join(', ')),
+    h('label',{class:'f'},'제목 ',subj),h('label',{class:'f',style:'margin-top:8px'},'내용 ',ta),
+    h('p',{class:'muted small'},`메일은 ${nameOf(S.me)}님 계정으로 보내지고, 끝에 휴가 관리 주소가 붙어요.`),
+    h('div',{class:'row between'},msg,send)));
+  document.body.append(box);
 }
 function fillFy(){
   const sel=$('fySel'), cur=fyOf(TODAY); if(S.fy==null) S.fy=cur;
