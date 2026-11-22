@@ -493,7 +493,7 @@ button.file{font:inherit;font-size:12.5px;cursor:pointer}
         <p class="muted small" style="margin:-6px 0 12px">명단의 직원이 처음 로그인하면 명단의 메일 주소나 이름으로 자동 연결돼요. 이름이 다르거나 동명이인이면 ‘명단에서 고르기’로 직접 연결해 주세요. 연결되기 전까지는 결재와 연차 계산에 들어가지 않아요. 연결된 직원은 여기서 바로 고칠 수도 있어요.</p>
         <div class="row" style="margin:-4px 0 12px"><span class="muted small">왼쪽 ⠿ 손잡이를 마우스로 끌어 원하는 자리에 놓으면, 연차 현황·월별 보고·팀 캘린더도 같은 순서로 나와요.</span><button class="btn ghost sm" id="ordReset" type="button">기본 순서(팀·직위)로 되돌리기</button></div>
         <div class="tbl-wrap"><table>
-          <thead><tr><th style="width:56px">순서</th><th>직원</th><th>직위</th><th>국</th><th>팀</th><th>입사일</th><th>퇴사일</th><th>메일</th><th>명단</th><th>관리자</th></tr></thead>
+          <thead><tr><th style="width:56px">순서</th><th>직원</th><th>직위</th><th>국</th><th>팀</th><th>입사일</th><th>퇴사일</th><th>메일</th><th>명단</th><th>관리자</th><th title="임원 등 휴가·출장이 없는 분은 체크하면 연차 현황·월별 보고·현황판·팀 캘린더에서 숨겨요">현황 제외</th></tr></thead>
           <tbody id="peopleRows"></tbody>
         </table></div>
       </section>
@@ -505,6 +505,7 @@ button.file{font:inherit;font-size:12.5px;cursor:pointer}
           <tbody id="retRows"></tbody>
         </table></div>
         <p class="muted small hidden" id="retEmpty" style="margin:10px 0 0">퇴직 처리한 직원이 없어요.</p>
+        <div class="small" id="ignList" style="margin-top:12px"></div>
       </section>
       <section class="panel">
         <div class="row between" style="margin-bottom:14px">
@@ -682,7 +683,7 @@ button.file{font:inherit;font-size:12.5px;cursor:pointer}
       </section>
     </div>
   </div>
-<div class="muted small" style="text-align:center;margin-top:24px">프로그램 버전 2026.11.21-2</div>
+<div class="muted small" style="text-align:center;margin-top:24px">프로그램 버전 2026.11.22-1</div>
 </div>
 <script>
 /* ===== 재단 Microsoft 365 연결 정보 ===== */
@@ -1254,6 +1255,16 @@ function scopeOK(step,requester,approver){
 }
 /* ---------- 퇴직자: 기록은 남기고 화면·결재선에서만 뺌 ---------- */
 const isRetired=u=>{const p=P(u);return !!p.retired||(!!p.end&&p.end<TODAY);};
+function setFlag(id,f,v){
+  writeConfig(c=>{const R=c.roster=c.roster||{};const k=R[id]?id:Object.keys(R).find(kk=>R[kk].uid===id);
+    if(k){if(v)R[k][f]=true;else delete R[k][f];}
+    const uid=k?R[k].uid:id; if(uid&&!String(uid).startsWith('n:')){c.people=c.people||{};const p=c.people[uid]=c.people[uid]||{};if(v)p[f]=true;else delete p[f];}
+  }).catch(writeErr);
+}
+function ignoreAccount(u){   // 직원이 아닌 계정(공용 계정 등)을 목록에서 뺌
+  writeConfig(c=>{c.ignore=[...new Set([...(c.ignore||[]),u])];if(c.people)delete c.people[u];if(c.order)c.order=c.order.filter(x=>x!==u);})
+    .then(()=>notice(`${nameOf(u)} 계정을 직원 목록에서 뺐어요. (관리 › 직원·연차 › 퇴직자 아래 '제외한 계정'에서 되돌릴 수 있어요)`)).catch(writeErr);
+}
 function retirePerson(id){
   writeConfig(c=>{const R=c.roster=c.roster||{};const k=R[id]?id:Object.keys(R).find(kk=>R[kk].uid===id);
     const end=(k&&R[k].end)||((c.people||{})[id]||{}).end||TODAY;
@@ -1277,6 +1288,7 @@ function purgePerson(id){
   }).catch(writeErr);
 }
 function renderRetired(){
+  const ig=C().ignore||[]; $('ignList').replaceChildren(...(ig.length?[h('span',{class:'muted'},'제외한 계정(직원 아님): '),...ig.map(u=>h('span',{class:'tag',style:'margin-right:6px'},(PS[u]?.name?PS[u].name+' ('+u+')':u)+' ',h('button',{type:'button',class:'x',title:'되돌리기',onclick:()=>writeConfig(c=>{c.ignore=(c.ignore||[]).filter(x=>x!==u);}).catch(writeErr)},'↺')))]:[]));
   const R=C().roster||{}, ids=[];
   for(const [k,x] of Object.entries(R)) if(isRetired(x.uid||k)) ids.push(x.uid||k);
   for(const u of Object.keys(C().people||{})) if(!ids.includes(u)&&!Object.values(R).some(x=>x.uid===u)&&isRetired(u)) ids.push(u);
@@ -1292,7 +1304,8 @@ function renderRetired(){
         canPurge?armBtn('pg'+u,'영구 삭제','기록까지 지워요. 정말?',()=>purgePerson(u)):h('span',{class:'muted small',title:'보관 기한이 지나야 지울 수 있어요'},'보관 중')))));
   }
 }
-function knownPeople(){return [...new Set([...Object.keys(S.leaves),...Object.keys(C().people),...Object.keys(S.decisions),...Object.entries(C().roster||{}).filter(([,x])=>!x.uid).map(([k])=>k)])];}
+function knownPeople(){const ig=new Set(C().ignore||[]);return [...new Set([...Object.keys(S.leaves),...Object.keys(C().people),...Object.keys(S.decisions),...Object.entries(C().roster||{}).filter(([,x])=>!x.uid).map(([k])=>k)])].filter(u=>!ig.has(u));}
+const noStats=u=>!!P(u).noStats;   // 임원 등: 명단에는 두고 현황·보고에서만 숨김
 function approversFor(step,u){return knownPeople().filter(a=>a!==u&&!isRetired(a)&&fits(posAt(a,TODAY),step)&&scopeOK(step,u,a));}
 const approverOnly=u=>isOnly(posAt(u,TODAY));
 function idEq(a,k){if(!a||!k)return false;if(a===k)return true;const R=C().roster||{};return R[k]?.uid===a||(!!R[a]?.uid&&R[a].uid===k);}
@@ -2000,10 +2013,10 @@ function staffRows(){
   for(const [k,x] of Object.entries(roster)){
     const u=x.uid||k; linked.add(u);
     const p=u?P(u):x, pos=u?posAt(u,TODAY):(x.pos||'담당');
-    if(isOnly(pos)) continue;
+    if(isOnly(pos)||p.noStats||x.noStats) continue;
     rows.push({key:k,u,name:x.name,pos,team:p.team||'',hire:p.hire||'',end:p.end||''});
   }
-  for(const u of knownPeople()) if(!linked.has(u)){const p=P(u),pos=posAt(u,TODAY);if(isOnly(pos))continue;rows.push({key:u,u,name:nameOf(u),pos,team:p.team||'',hire:p.hire||'',end:p.end||''});}
+  for(const u of knownPeople()) if(!linked.has(u)){const p=P(u),pos=posAt(u,TODAY);if(isOnly(pos)||p.noStats)continue;rows.push({key:u,u,name:nameOf(u),pos,team:p.team||'',hire:p.hire||'',end:p.end||''});}
   return rows;
 }
 const activeOn=(x,s)=>(!x.hire||x.hire<=s)&&(!x.end||x.end>=s);
@@ -2601,7 +2614,7 @@ function renderAdmin(){
       const pos=h('select',{style:'min-width:86px',onchange:e=>setPerson(u,'pos',e.target.value)},[...new Set([...posNames(),p.pos||'담당'])].map(x=>h('option',{value:x,selected:x===(p.pos||'담당')},x)));
       const txt=(f,ph)=>h('input',{type:'text',value:p[f]||'',placeholder:ph,maxlength:'20',list:f==='team'?'teamList':'bureauList',style:'width:120px',onchange:e=>setPerson(u,f,e.target.value.trim())});
       const date=f=>h('input',{type:'date',value:p[f]||'',onchange:e=>setPerson(u,f,e.target.value)});
-      rowsOut.push([u,h('tr',{},h('td',{},personEl(u)),h('td',{},pos),h('td',{},txt('bureau','예: 사업국')),h('td',{},txt('team','예: 기획팀')),h('td',{},date('hire')),h('td',{},date('end')),h('td',{},mailInput(u)),h('td',{},h('div',{class:'row',style:'gap:4px;flex-wrap:nowrap'},link,armBtn('rt'+u,'퇴직 처리','퇴직 처리할까요?',()=>retirePerson(u)))),h('td',{},adminBox(u)))]);
+      rowsOut.push([u,h('tr',{},h('td',{},personEl(u)),h('td',{},pos),h('td',{},txt('bureau','예: 사업국')),h('td',{},txt('team','예: 기획팀')),h('td',{},date('hire')),h('td',{},date('end')),h('td',{},mailInput(u)),h('td',{},h('div',{class:'row',style:'gap:4px;flex-wrap:nowrap'},link,byUid[u]?armBtn('rt'+u,'퇴직 처리','퇴직 처리할까요?',()=>retirePerson(u)):armBtn('ig'+u,'삭제','직원이 아닌 계정을 목록에서 뺄까요?',()=>ignoreAccount(u)))),h('td',{},adminBox(u)),h('td',{style:'text-align:center'},h('input',{type:'checkbox',style:'width:auto',title:'연차 현황·월별 보고·현황판·팀 캘린더에서 숨기기',checked:noStats(u),onchange:e=>setFlag(u,'noStats',e.target.checked)})))]);
     }
     for(const [k,x] of unlinked){
       if(isRetired(k)) continue;
@@ -2611,7 +2624,7 @@ function renderAdmin(){
       const pos=h('select',{style:'min-width:86px',onchange:e=>set('pos',e.target.value)},[...new Set([...posNames(),x.pos||'담당'])].map(n=>h('option',{value:n,selected:n===(x.pos||'담당')},n)));
       const nm=h('input',{type:'text',value:x.name||'',maxlength:'20',style:'width:110px;font-weight:600','aria-label':'이름',onchange:e=>{const v=e.target.value.trim();if(v)set('name',v);}});
       rowsOut.push([k,h('tr',{},h('td',{},nm,h('div',{class:'muted small'},'아직 접속 전')),h('td',{},pos),h('td',{},txt('bureau','예: 사무국')),h('td',{},txt('team','예: 기획관리팀')),h('td',{},date('hire')),h('td',{},date('end')),h('td',{},mailInput(k)),
-        h('td',{},armBtn('rt'+k,'퇴직 처리','퇴직 처리할까요?',()=>retirePerson(k))),h('td',{},adminBox(k)))]);
+        h('td',{},reqsOf(k).length?armBtn('rt'+k,'퇴직 처리','퇴직 처리할까요?',()=>retirePerson(k)):h('div',{class:'row',style:'gap:4px;flex-wrap:nowrap'},armBtn('rt'+k,'퇴직 처리','퇴직 처리할까요?',()=>retirePerson(k)),armBtn('dl'+k,'삭제','기록이 없어요. 명단에서 지울까요?',()=>purgePerson(k)))),h('td',{},adminBox(k)),h('td',{style:'text-align:center'},h('input',{type:'checkbox',style:'width:auto',title:'연차 현황·월별 보고·현황판·팀 캘린더에서 숨기기',checked:noStats(k),onchange:e=>setFlag(k,'noStats',e.target.checked)})))]);
     }
     const sorted=rowsOut.sort((a,b)=>cmpPeople(a[0],b[0])), ids=sorted.map(r=>r[0]);
     sorted.forEach(([id,tr],i)=>{
@@ -2631,7 +2644,7 @@ function renderAdmin(){
     $('balTitle').textContent=`${fyLabel(S.fy)} 연차 현황`;
     const bt=$('balRows'); bt.replaceChildren();
     renderRetired();
-    for(const u of people.filter(u=>!approverOnly(u)&&!(P(u).end&&P(u).end<fyStart(S.fy))).sort(cmpPeople)){
+    for(const u of people.filter(u=>!approverOnly(u)&&!noStats(u)&&!(P(u).end&&P(u).end<fyStart(S.fy))).sort(cmpPeople)){
       const p=P(u), b=pool(u,S.fy,'annual'), c=pool(u,S.fy,'comp');
       const adj=h('input',{type:'number',step:'0.125',value:toDays(p.adj?.[S.fy]||0),style:'width:80px;text-align:right','aria-label':'조정 일수',onchange:e=>{const v=Math.round((Number(e.target.value)||0)*HPD()*100)/100;writeConfig(cf=>{cf.people=cf.people||{};const q=cf.people[u]=cf.people[u]||{};q.adj=q.adj||{};if(v)q.adj[S.fy]=v;else delete q.adj[S.fy];}).catch(writeErr);}});
       bt.append(h('tr',{},h('td',{},personEl(u),!p.hire?h('div',{class:'note'},'입사일 없음'):null),h('td',{class:'num'},fmtH(b.granted-(Number(p.adj?.[S.fy])||0))),h('td',{class:'num muted'},fmtH(b.sched)),h('td',{class:'num'},adj),
