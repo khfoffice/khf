@@ -169,12 +169,12 @@ tr:last-child td{border-bottom:0}
 .paper{width:297mm;min-height:210mm;box-sizing:border-box;padding:7mm 8mm 5mm;background:#fff;color:#111;box-shadow:0 1px 6px rgba(0,0,0,.18);margin:0 auto;font-family:"IBM Plex Sans KR","Malgun Gothic","Apple SD Gothic Neo",sans-serif}
 .rp-top{display:flex;justify-content:space-between;align-items:flex-start;gap:6mm;margin-bottom:3mm}
 .rp-top>div:first-child{flex:1;text-align:center;padding-left:70mm}
-.rp-top>.signs{flex:none;width:70mm;table-layout:fixed}
+.rp-top>.signs{flex:none;width:72mm;table-layout:fixed}
 .rp-title{font-size:17pt;font-weight:700;color:#1f4e9a;letter-spacing:.02em}
 .rp-sub{font-size:8.5pt;color:#333;margin-top:1mm}
 .signs{border-collapse:collapse;font-size:7.5pt}
 .signs th,.signs td{border:.3mm solid #777;width:13mm;text-align:center;font-weight:500;color:#111;background:#fff}
-.signs th{height:4.5mm;background:#f2f2f2}.signs td{height:9mm}.signs th.sv{width:5mm;writing-mode:vertical-rl}
+.signs th{height:4.5mm;background:#f2f2f2}.signs td{height:9mm}.signs th.sv{width:7mm;padding:0;line-height:1.7;writing-mode:horizontal-tb}
 table.rp{width:100%;border-collapse:collapse;table-layout:fixed;font-size:7.6pt;color:#111}
 .rp th,.rp td{border:.25mm solid #9a9a9a;padding:0 .8mm;height:4.7mm;line-height:1.15;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
 .rp thead th{background:#eef2e6;font-weight:600;height:6mm;white-space:normal;line-height:1.1;word-break:break-all}
@@ -683,7 +683,7 @@ button.file{font:inherit;font-size:12.5px;cursor:pointer}
       </section>
     </div>
   </div>
-<div class="muted small" style="text-align:center;margin-top:24px">프로그램 버전 2026.11.22-1</div>
+<div class="muted small" style="text-align:center;margin-top:24px">프로그램 버전 2026.11.22-2</div>
 </div>
 <script>
 /* ===== 재단 Microsoft 365 연결 정보 ===== */
@@ -2259,11 +2259,11 @@ function renderReport(){
   $('rpKind').value=S.rpKind||'annual';
   const R=S.report=buildReport(S.rpKind||'annual',fy,S.rpMi);
   const paper=$('paper'); paper.replaceChildren();
-  const signs=h('table',{class:'signs'},h('tr',{},h('th',{rowspan:'2',class:'sv'},'결재'),...['담당','팀장','국장','이사','이사장'].map(t=>h('th',{},t))),h('tr',{},...[0,1,2,3,4].map(()=>h('td',{}))));
+  const signs=h('table',{class:'signs'},h('tr',{},h('th',{rowspan:'2',class:'sv'},'결',h('br'),'재'),...['담당','팀장','국장','이사','이사장'].map(t=>h('th',{},t))),h('tr',{},...[0,1,2,3,4].map(()=>h('td',{}))));
   paper.append(h('div',{class:'rp-top'},h('div',{},h('div',{class:'rp-title'},R.title),h('div',{class:'rp-sub'},R.sub)),signs));
   const cg=h('colgroup',{},R.w.map(x=>h('col',{style:`width:${x}mm`})));
   const tb=h('tbody',{},R.rows.map(r=>h('tr',{class:r.grpStart?'grp':''},r.cells.map((c,i)=>h('td',{class:i===4?'ent':i===17?'dates':i===1||i===2?'nm':'',title:c},c)))));
-  paper.append(h('table',{class:'rp'},cg,h('thead',{},h('tr',{},R.head.map(c=>h('th',{},c)))),tb,h('tfoot',{},h('tr',{},R.foot.map(c=>h('td',{},c))))));
+  paper.append(h('table',{class:'rp'},cg,h('thead',{},h('tr',{},R.head.map(c=>h('th',{},...(/^(연가|부여)일수$/.test(c)?[c.slice(0,2),h('br'),c.slice(2)]:[c]))))),tb,h('tfoot',{},h('tr',{},R.foot.map(c=>h('td',{},c))))));
   paper.append(h('div',{class:'rp-note'},R.notes.map(n=>h('div',{},n))));
 }
 async function reportXlsx(){
