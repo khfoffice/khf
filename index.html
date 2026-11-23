@@ -683,7 +683,7 @@ button.file{font:inherit;font-size:12.5px;cursor:pointer}
       </section>
     </div>
   </div>
-<div class="muted small" style="text-align:center;margin-top:24px">프로그램 버전 2026.11.23-3</div>
+<div class="muted small" style="text-align:center;margin-top:24px">프로그램 버전 2026.11.23-4</div>
 </div>
 <script>
 /* ===== 재단 Microsoft 365 연결 정보 ===== */
@@ -1455,14 +1455,16 @@ function sinceOf(r){const e=ev(r);if(e.status!=='pending')return null;const prev
 function waitInfo(r){
   const since=sinceOf(r); if(since==null) return null;
   const days=Math.floor((Date.now()-since)/864e5), dStart=dayDiff(TODAY,r.start);
-  const late=days>=REMIND(), soon=dStart<=1;
-  return {days,dStart,late,soon,bad:late||soon};
+  const grant=!!TYPES[r.type]?.grant;   // 대체휴가 부여는 이미 지난 휴일근무를 등록하는 것이라 날짜로 재촉하지 않음
+  const late=days>=REMIND(), soon=!grant&&dStart<=1;
+  return {days,dStart,late,soon,grant,bad:late||soon};
 }
 function waitEl(r){
   const w=waitInfo(r); if(!w) return null;
   const parts=[w.days?`${w.days}일째 대기`:'오늘 올라옴'];
   if(r.uid===S.me){const who=recipientsAt(r,ev(r).idx).map(nameOf).join(', ');if(who)parts.push('결재자 '+who);}
-  if(w.dStart<0) parts.push('휴가일 지남'); else if(w.dStart===0) parts.push('오늘 휴가'); else if(w.dStart===1) parts.push('내일 휴가');
+  if(w.grant) parts.push(`${fmtD(r.start)} 근무분`);
+  else if(w.dStart<0) parts.push('휴가일 지남'); else if(w.dStart===0) parts.push('오늘 휴가'); else if(w.dStart===1) parts.push('내일 휴가');
   return h('div',{class:'wait'+(w.bad?' late':'')},(w.bad?'⏰ ':'')+parts.join(' · '));
 }
 function overdueAll(){return allRequests().filter(r=>waitInfo(r)?.bad);}
