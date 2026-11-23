@@ -1,7 +1,7 @@
 {
  "name": "재단 전자결재",
  "short_name": "전자결재",
- "id": "./",
+ "id": "/khf/approval/ea",
  "start_url": "./",
  "scope": "./",
  "display": "standalone",
