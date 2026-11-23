@@ -311,7 +311,7 @@ function(e){return e.hasOwnProperty("authorization_endpoint")&&e.hasOwnProperty(
     if(/^data\/users\/[^/]+\/keys$/.test(path))return keyDoc;
     return {id:idOf(path),path,
       async get(){const ent=await getOne(path);return snapDoc(path,ent);},
-      async set(d){if(d===undefined){const e=new Error('invalid');e.code='invalid_argument';throw e;}await put(path,JSON.parse(JSON.stringify(d)),{createOnly:path.startsWith('nos/')&&!cache.get(path)});},
+      async set(d){if(d===undefined){const e=new Error('invalid');e.code='invalid_argument';throw e;}await put(path,JSON.parse(JSON.stringify(d)),{createOnly:(path.startsWith('nos/')||(path.startsWith('docs/')&&d&&d.imported))&&!cache.get(path)});},
       async update(p){await update(path,p);},
       async delete(){await del(path);},
       async acquire(){return {acquired:true};},
@@ -656,7 +656,7 @@ td.nw{white-space:nowrap;font-variant-numeric:tabular-nums}
 </div>
 <script>
 /* ================= 프로그램 버전 (고칠 때마다 올림) ================= */
-const APP_VER='2026.11.20 (v56)';
+const APP_VER='2026.11.23 (v57)';
 (function(){const put=()=>{const el=document.getElementById('appVer');if(el)el.textContent='버전 '+APP_VER;};put();document.addEventListener('DOMContentLoaded',put);
   // M365 버전: 서버에 새 버전이 올라왔는지 확인 (열 때 + 30분마다)
   // 새 버전이 올라와 있으면 '업데이트 중' 화면을 보여 주고 자동으로 새 버전을 연다 (작성 중인 글이 있으면 끝날 때까지 기다림)
@@ -903,7 +903,7 @@ function writeErr(e,el){console.error(e);let t='저장하지 못했어요. 잠�
   else if(e?.code==='quota_exceeded')t='저장 공간이 가득 찼어요. 관리자에게 알려 주세요.';
   else if(e?.message&&/번호/.test(e.message))t=e.message;
   if(el){el.textContent=t;el.className='msg err';}else notice(t);}
-function writeConfig(m){return serial('config',async()=>{const prev=clone(S.cfg);const next=clone(S.cfg);m(next);try{for(const [k,a] of Object.entries(prev.away||{})){const b=(next.away||{})[k];if(a&&a.from&&JSON.stringify(a)!==JSON.stringify(b)){next.awayLog=next.awayLog||{};next.awayLog[k]=[...(next.awayLog[k]||[]),a].slice(-50);}}}catch(e){}await S.db.doc('config/main').set(next);try{rightsLog(prev,next);}catch(e){console.warn(e);}});}
+function writeConfig(m){return serial('config',async()=>{const prev=clone(S.cfg);const next=clone(S.cfg);m(next);try{for(const [k,a] of Object.entries(prev.away||{})){const b=(next.away||{})[k];if(a&&a.from&&JSON.stringify(a)!==JSON.stringify(b)){next.awayLog=next.awayLog||{};next.awayLog[k]=[...(next.awayLog[k]||[]),a].slice(-50);}}}catch(e){}await S.db.doc('config/main').set(next);S.cfg=next;try{rightsLog(prev,next);}catch(e){console.warn(e);}});}
 function writeDec(entries){return serial('dec',async()=>{const cur=clone(S.dec[S.me]||{d:{}});cur.d=cur.d||{};Object.assign(cur.d,entries);await S.db.doc('dec/'+S.me).set(clone(cur));});}
 /* ================= 열람 제한: 문서 내용은 관련자·관리자만 풀 수 있게 암호화 ================= */
 // 문서마다 새 AES 키로 내용을 잠그고, 그 키를 관련자·관리자 각자의 공개키로 감싸 둔다. 개인키는 본인만 읽는 data/users/<id>에 있다.
@@ -924,7 +924,8 @@ async function initKeys(){
 }
 async function pubOf(u){const j=S.links[u]?.pub;if(!j)return null;const c=K.pubCache[u];if(c&&c.n===kn(j))return c.k;const k=await crypto.subtle.importKey('jwk',{kty:j.kty,n:j.n,e:j.e,alg:j.alg,ext:true},RSA,false,['wrapKey']);K.pubCache[u]={n:kn(j),k};return k;}
 // 이관 문서 담당: 대장의 기안자·담당자 이름이 명단에 한 사람만 있으면 그 사람
-function keyByName(n){const s=squash(n);if(!s)return null;const ks=Object.keys(C().roster||{}).filter(k=>squash(R(k)?.name)===s&&!R(k)?.left);return ks.length===1?ks[0]:null;}
+const KBN={ros:null,m:new Map()};
+function keyByName(n){const s=squash(n);if(!s)return null;const ros=C().roster;if(KBN.ros!==ros){KBN.ros=ros;KBN.m.clear();}if(KBN.m.has(s))return KBN.m.get(s);const ks=Object.keys(ros||{}).filter(k=>squash(R(k)?.name)===s&&!R(k)?.left);const v=ks.length===1?ks[0]:null;KBN.m.set(s,v);return v;}
 function participants(d){if(d.imported){const us=new Set();for(const k of [keyByName(d.authorName),d.assignee,...(d.share||[])].filter(Boolean)){const u=uidOfKey(k);if(u)us.add(u);}return [...us];}const ks=new Set([d.author,...(d.steps||[]).map(s=>s.key),...(d.coop||[]),d.assignee,...(d.share||[])].filter(Boolean));
   for(const s of (d.steps||[])){const p=C().proxies[s.key];if(p)ks.add(p);const a=C().away[s.key];if(a&&a.proxy)ks.add(a.proxy);const u=uidOfKey(s.key),la=u&&S.links[u]?.away;if(la&&la.proxy)ks.add(la.proxy);}
   const us=new Set([d.authorUid].filter(Boolean));for(const k of ks){const u=uidOfKey(k);if(u)us.add(u);}return [...us];}
@@ -955,7 +956,7 @@ async function openDoc(raw){
     const body=JSON.parse(new TextDecoder().decode(pt));K.plain[raw.id]={iv:raw.enc.iv,body,key};
     return {...body,...clear,_keys:raw.keys||{},_kn:raw.kn||{}};}catch(e){console.warn('열 수 없는 문서',raw.id);return null;}}
 const rawDocs={};let ingesting=null,ingestAgain=false;
-function ingest(){if(ingesting){ingestAgain=true;return;}ingesting=(async()=>{const t0=performance.now();const out={};const ents=Object.entries(rawDocs);for(let i=0;i<ents.length;i+=40){const part=await Promise.all(ents.slice(i,i+40).map(([id,r])=>openDoc(r).then(d=>[id,d])));for(const [id,d] of part)if(d)out[id]=d;}S.docs=out;S.perf=S.perf||{};S.perf.ingest=Math.round(performance.now()-t0);S.perf.n=ents.length;if(!S.perf.first)S.perf.first=Math.round(performance.now());S.perf.lazyN=Object.values(out).filter(d=>d._lazy).length;S.ready.docs=true;ingesting=null;soon();if(ingestAgain){ingestAgain=false;ingest();}else{setTimeout(pubMigrate,3000);setTimeout(lazyWarm,5000);}})();}
+function ingest(){if(ingesting){ingestAgain=true;return;}ingesting=(async()=>{await null;const t0=performance.now();const out={};const ents=Object.entries(rawDocs);for(let i=0;i<ents.length;i+=40){const part=await Promise.all(ents.slice(i,i+40).map(([id,r])=>openDoc(r).then(d=>[id,d])));for(const [id,d] of part)if(d)out[id]=d;}S.docs=out;S.perf=S.perf||{};S.perf.ingest=Math.round(performance.now()-t0);S.perf.n=ents.length;if(!S.perf.first)S.perf.first=Math.round(performance.now());S.perf.lazyN=Object.values(out).filter(d=>d._lazy).length;S.ready.docs=true;ingesting=null;soon();if(ingestAgain){ingestAgain=false;ingest();}else{setTimeout(pubMigrate,3000);setTimeout(lazyWarm,5000);}})();}
 // 예전에 불러온 이관 문서에 목록 정보가 없으면 관리자 화면에서 한 번씩 채워 둔다
 let pubMigrating=false;
 async function pubMigrate(){if(pubMigrating||!S.isAdmin||S.readOnly||!K.priv)return;const need=Object.values(S.docs).filter(d=>d.imported&&!d._locked&&!d._lazy&&!d.deleted&&rawDocs[d.id]&&!rawDocs[d.id].pub);if(!need.length)return;
@@ -2160,10 +2161,12 @@ function viewLedger(v){
   v.append(h('section',{class:'panel'},
     h('div',{class:'seg',style:'max-width:620px;margin-bottom:12px'},[['in','수신'],['out','발신'],['gian','기안'],['buy','물품결의'],['form','신청서'],['etc','기타']].map(([k2,t])=>h('button',{type:'button','aria-pressed':kind===k2?'true':'false',onclick:()=>{S.sub.lk=k2;render(true);}},t))),
     h('div',{class:'row between'},h('div',{class:'row'},h('select',{id:'lb',onchange:e=>{S.sub.lb=e.target.value;render(true);}},h('option',{value:'all'},'전체 지점'),C().branches.map(b=>h('option',{value:b.id,selected:br===b.id},b.name))),yearSel('ly',yr,x=>{S.sub.ly=x;loadYear(x);render(true);}),kind==='form'?h('select',{id:'lfk','aria-label':'신청서 종류',onchange:e=>{S.sub.lfk=e.target.value;render(true);}},h('option',{value:'all'},'모든 신청서'),Object.keys(FORMS).map(k2=>h('option',{value:k2,selected:fk===k2},KINDS[k2].label))):null,qi),
-      h('div',{class:'row'},m,h('button',{class:'btn ghost sm',type:'button',onclick:()=>backupDialog(yr)},'백업 (zip)'),S.isAdmin&&kind!=='form'&&kind!=='etc'?h('button',{class:'btn ghost sm',type:'button',onclick:()=>importDialog(kind,yr)},'기존 대장 불러오기'):null,S.isAdmin&&['in','out','gian','buy'].includes(kind)?h('button',{class:'btn ghost sm',type:'button',onclick:()=>scanDialog(kind,yr)},'스캔파일 연결'):null,h('button',{class:'btn sm',type:'button',onclick:()=>xlsxSave(`${kind==='form'?'신청서':KINDS[kind].short}대장_${yr}.xlsx`,[{name:`${kind==='form'?'신청서':KINDS[kind].short}대장`,title:`${yr}년 ${kind==='form'?(fk!=='all'?KINDS[fk].label:'신청서'):KINDS[kind].label} 대장${br!=='all'?' · '+branchById(br).name:''}`,rows:[cols.map(c=>c[0]),...list.slice().reverse().map(d=>cols.map(([,f])=>f(d)))],cols:cols.map(([t])=>t==='제목'?44:0)}]).catch(er=>{console.error(er);m.textContent='엑셀을 만들지 못했어요.';m.className='msg err';})},'엑셀 내려받기')))));
+      h('div',{class:'row'},m,h('button',{class:'btn ghost sm',type:'button',onclick:()=>backupDialog(yr)},'백업 (zip)'),S.isAdmin&&kind!=='form'&&kind!=='etc'?h('button',{class:'btn ghost sm',type:'button',onclick:()=>importDialog(kind,yr)},'기존 대장 불러오기'):null,S.isAdmin?h('button',{class:'btn ghost sm',type:'button',onclick:()=>bulkLedgerDialog()},'예전 대장 한꺼번에'):null,S.isAdmin&&['in','out','gian','buy'].includes(kind)?h('button',{class:'btn ghost sm',type:'button',onclick:()=>scanDialog(kind,yr)},'스캔파일 연결'):null,h('button',{class:'btn sm',type:'button',onclick:()=>xlsxSave(`${kind==='form'?'신청서':KINDS[kind].short}대장_${yr}.xlsx`,[{name:`${kind==='form'?'신청서':KINDS[kind].short}대장`,title:`${yr}년 ${kind==='form'?(fk!=='all'?KINDS[fk].label:'신청서'):KINDS[kind].label} 대장${br!=='all'?' · '+branchById(br).name:''}`,rows:[cols.map(c=>c[0]),...list.slice().reverse().map(d=>cols.map(([,f])=>f(d)))],cols:cols.map(([t])=>t==='제목'?44:0)}]).catch(er=>{console.error(er);m.textContent='엑셀을 만들지 못했어요.';m.className='msg err';})},'엑셀 내려받기')))));
   v.append(h('section',{class:'panel'},h('p',{class:'small muted',style:'margin:0 0 8px'},`${list.length}건${S.isAdmin?' · 관리자는 모든 문서를 봐요':' · 내가 관련된 문서와 이관 문서 목록이 보여요 (이관 문서 내용은 담당·지정자만)'}`),list.length?h('div',{class:'tbl'},h('table',{class:'t'},h('tr',{},cols.map(([t])=>h('th',{},t))),list.map(d=>h('tr',{class:'click',onclick:()=>go('ledger',{open:d.id})},cols.map(([t,f])=>{const val=f(d);return h('td',{class:t==='제목'?'':(typeof val==='number'?'num':'nw')},typeof val==='number'&&t!=='파일건수'?won(val):val);}))))):h('p',{class:'empty'},'해당하는 문서가 없어요.')));
 }
 const loadedYears=new Set();
+async function ingestWait(){for(let i=0;i<600;i++){if(!ingesting&&!ingestAgain)return;await (ingesting||new Promise(r=>setTimeout(r,50)));await new Promise(r=>setTimeout(r,10));}}
+async function loadYearWait(y){if(y>=new Date().getFullYear()-1)return;if(!loadedYears.has(y))await loadYear(y);await ingestWait();}
 async function loadYear(y){if(loadedYears.has(y)||!S.db||y>=new Date().getFullYear()-1)return;loadedYears.add(y);try{const snap=await S.db.collection('docs').where('yr','==',Number(y)).get();for(const x of snap.docs)rawDocs[x.id]=x.data();ingest();}catch(e){console.error(e);loadedYears.delete(y);}}
 
 /* ---------- 이전 문서 스캔파일 연결 ----------
@@ -2241,6 +2244,63 @@ function scanDialog(kind,yr){
             m.textContent=`${ok}건을 옮겼어요${bad?` (${bad}건은 실패, 다시 눌러 주세요)`:''}.`;m.className=bad?'msg err':'msg good';}
           finally{st.busy=false;S.bulk=false;render(true);}}},'전부 가져와 잠그기'));})(),
     sum,h('div',{class:'row between',style:'margin-top:10px'},m,go2));
+}
+/* ---------- 예전 대장 한꺼번에 불러오기 (여러 연도·종류·지점, zip 그대로) ----------
+   이미 문서가 있는 (종류·지점·연도)는 그대로 두고, 없는 것만 넣는다. 중간에 멈춰도 다시 누르면 이어서 한다. */
+const BULK_KIND=n=>/기안/.test(n)?'gian':/발신/.test(n)?'out':/수신/.test(n)?'in':/물품|구입/.test(n)?'buy':null;
+function parseLedgerRows(rows){const hi=rows.findIndex(r=>r.some(c=>/번호|_?no1$|jebsuno1/i.test(c))&&r.some(c=>/제\s*목|품\s*명/.test(c)));if(hi<0)return [];
+  const map=mapHeader(rows[hi]);if(map.no==null||map.title==null)return [];const lg=map.lg;
+  return rows.slice(hi+1).map(r=>{const g=f=>map[f]!=null&&map[f]>=0?String(r[map[f]]??'').trim():'';const no=lg?parseNo(`${String(r[lg[1]]??'').trim()}-${String(r[lg[2]]??'').trim()}${lg[3]!=null?'-'+(String(r[lg[3]]??'').trim()||'0'):''}`):parseNo(g('no'));if(!no||!g('title'))return null;
+    return {no,title:g('title'),branch:squash(g('branch'))==='본원'?'@bw':branchOfName(g('branch')),note:g('note'),origNo:g('origNo'),fileCount:Number(g('fileCount'))||0,date:normDate(g('date')),sender:g('sender'),to:g('to'),replyNeed:/^(y|o|1|true|예|✓|v|○)$/i.test(g('replyNeed')),replyNo:g('replyNo'),authorName:g('authorName'),amount:Number(String(g('amount')).replace(/[^\d.]/g,''))||0,vendor:g('vendor'),team:g('team')};}).filter(Boolean);}
+function impDocOf(kind,branch,p){return {id:uid36(),kind,imported:true,branch,yr:p.no.yr,no:{n:p.no.n,sub:p.no.sub},title:p.title,origNo:p.origNo,fileCount:p.fileCount,recvDate:kind==='in'?p.date:'',date:p.date,draftDate:kind==='in'?'':p.date,sender:p.sender,to:p.to,replyNeed:p.replyNeed,replyNo:p.replyNo,authorName:p.authorName,amount:p.amount,vendor:p.vendor,team:p.team,state:'done',createdAt:Date.now(),files:[],...(p.note?(kind==='in'?{memo:p.note}:{body:p.note}):{})};}
+function bulkLedgerDialog(){
+  const st={rows:[],groups:[],busy:false,stop:false};const m=h('div',{class:'msg',role:'status'}),sum=h('div',{}),go2=h('button',{class:'btn',type:'button',disabled:true},'없는 것만 불러오기');
+  const bwSel=h('select',{'aria-label':'본원은 어느 기관',onchange:()=>{if(st.rows.length)plan();}},C().branches.map(b=>h('option',{value:b.id,selected:b.id==='hq'},b.name)));
+  const close=()=>{if(st.busy)return;box.remove();};
+  const box=h('div',{class:'modal',onclick:e=>{if(e.target===box)close();}},h('div',{class:'modal-card',style:'max-width:760px'},h('div',{class:'row between',style:'margin-bottom:8px'},h('b',{},'예전 대장 한꺼번에 불러오기'),h('button',{class:'btn ghost sm',onclick:close},'닫기')),
+    h('p',{class:'small muted',style:'margin:0 0 8px'},'예전 문서관리 프로그램에서 내보낸 대장 파일(.xls)이나 그 파일을 묶은 zip을 여러 개 한꺼번에 고르세요. 파일 이름의 기안·발신·수신·물품결의로 종류를, 대장의 지점 칸으로 기관을, 문서번호로 연도를 정해요. 프로그램에 이미 문서가 있는 연도는 그대로 두고 없는 연도만 넣어요.'),
+    h('div',{class:'row'},h('label',{class:'btn ghost sm',style:'cursor:pointer'},'파일 고르기 (zip·xls, 여러 개)',h('input',{type:'file',multiple:true,accept:'.zip,.xls,.xlsx',hidden:true,onchange:e=>{const l=[...e.target.files];e.target.value='';read(l);}})),
+      h('span',{class:'small'},'"본원"은'),bwSel),sum,h('div',{class:'row between',style:'margin-top:10px'},m,h('div',{class:'row'},h('button',{class:'btn ghost sm',type:'button',onclick:()=>{st.stop=true;}},'멈추기'),go2))));
+  document.body.append(box);
+  const read=async files=>{st.rows=[];m.textContent='파일을 읽는 중…';m.className='msg';const bad=[];
+    try{await lib('xlsx');const items=[];
+      for(const f of files){if(/\.zip$/i.test(f.name)){await lib('jszip');const z=await JSZip.loadAsync(await f.arrayBuffer(),{decodeFileName:b=>{const u=b instanceof Uint8Array?b:new Uint8Array(b);try{const s=new TextDecoder('utf-8',{fatal:true}).decode(u);return s;}catch(e){try{return new TextDecoder('euc-kr').decode(u);}catch(e2){return String.fromCharCode(...u);}}}});
+          for(const [n,e] of Object.entries(z.files))if(!e.dir&&/\.xlsx?$/i.test(n))items.push({name:n.split('/').pop(),buf:await e.async('arraybuffer')});}
+        else items.push({name:f.name,buf:await f.arrayBuffer()});}
+      for(const [i,it] of items.entries()){m.textContent=`파일을 읽는 중… ${i+1}/${items.length}`;const kind=BULK_KIND(it.name);if(!kind){bad.push(it.name);continue;}
+        try{const wb=XLSX.read(it.buf,{type:'array',cellDates:true,...(/\.xls$/i.test(it.name)?{codepage:949}:{})});const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,raw:false,dateNF:'yyyy-mm-dd',defval:''}).map(r=>r.map(c=>String(c).trim())).filter(r=>r.some(Boolean));
+          for(const p of parseLedgerRows(rows))st.rows.push({kind,file:it.name,p});}catch(er){console.warn(er);bad.push(it.name);}
+        if(i%10===0)await new Promise(r=>setTimeout(r,0));}
+      m.textContent=`파일 ${items.length}개에서 ${st.rows.length}건을 읽었어요${bad.length?` (읽지 못한 파일 ${bad.length}개: ${bad.slice(0,3).join(', ')}${bad.length>3?' …':''})`:''}. 프로그램에 있는 문서를 확인하는 중…`;
+      await plan();}
+    catch(er){console.error(er);m.textContent='파일을 읽지 못했어요.';m.className='msg err';}};
+  const gkey=(k,b,y)=>`${k}_${b}_${y}`;
+  const plan=async()=>{const g=new Map();for(const r of st.rows){const b=r.p.branch==='@bw'?bwSel.value:(r.p.branch||bwSel.value);const k=gkey(r.kind,b,r.p.no.yr);if(!g.has(k))g.set(k,{key:k,kind:r.kind,branch:b,yr:r.p.no.yr,list:[]});g.get(k).list.push(r.p);}
+    const yrs=[...new Set([...g.values()].map(x=>x.yr))].sort();for(const [i,y] of yrs.entries()){m.textContent=`프로그램에 있는 문서 확인 중… ${y}년 (${i+1}/${yrs.length})`;await loadYearWait(y);}
+    const marks=C().bulkImp||{};
+    for(const x of g.values()){const have=Object.values(S.docs).filter(d=>d.kind===x.kind&&d.branch===x.branch&&Number(d.yr)===x.yr&&!d.deleted).length;x.have=have;x.state=marks[x.key]==='run'?'resume':have?'skip':'new';}
+    st.groups=[...g.values()].sort((a,b)=>a.kind.localeCompare(b.kind)||a.yr-b.yr||a.branch.localeCompare(b.branch));
+    const todo=st.groups.filter(x=>x.state!=='skip'),n=todo.reduce((a,x)=>a+x.list.length,0);
+    const by={};for(const x of st.groups){const o=by[x.kind]=by[x.kind]||{new:0,skip:0,yNew:new Set(),ySkip:new Set()};if(x.state==='skip'){o.skip+=x.list.length;o.ySkip.add(x.yr);}else{o.new+=x.list.length;o.yNew.add(x.yr);}}
+    const yrTxt=s=>{const a=[...s].sort();if(!a.length)return '-';const out=[];let st0=a[0],pv=a[0];for(const y of a.slice(1).concat([null])){if(y===pv+1){pv=y;continue;}out.push(st0===pv?String(st0):`${st0}~${pv}`);st0=pv=y;}return out.join(', ');};
+    sum.replaceChildren(h('div',{class:'tbl',style:'margin-top:8px'},h('table',{class:'t'},h('tr',{},['종류','새로 넣을 건수','새로 넣을 연도','그대로 둘 연도 (이미 있음)'].map(x=>h('th',{},x))),
+      Object.entries(by).map(([k,o])=>h('tr',{},h('td',{class:'nw'},KINDS[k].label),h('td',{class:'num'},o.new),h('td',{class:'small'},yrTxt(o.yNew)),h('td',{class:'small'},yrTxt(o.ySkip)))))),
+      h('p',{class:'small',style:'margin:6px 0 0'},`모두 ${n}건을 새로 넣어요. 건수가 많으면 시간이 오래 걸려요(대략 1천 건에 몇 분). 창을 닫지 말고 기다려 주세요. 멈춰도 다시 누르면 이어서 해요.`));
+    m.textContent=`${st.rows.length}건을 읽었어요.`;go2.disabled=!n;};
+  go2.onclick=async()=>{if(st.busy)return;st.busy=true;st.stop=false;go2.disabled=true;S.bulk=true;const Y=new Date().getFullYear();let ok=0,skip=0,fail=0;
+    const todo=st.groups.filter(x=>x.state!=='skip'),total=todo.reduce((a,x)=>a+x.list.length,0);
+    try{await writeConfig(c=>{c.bulkImp={...(c.bulkImp||{})};for(const x of todo)c.bulkImp[x.key]='run';const mn=Math.min(...todo.map(x=>x.yr));if(mn&&mn<(Number(c.ledgerFrom)||9999))c.ledgerFrom=mn;});
+      for(const x of todo){if(st.stop)break;
+        const have=new Set(Object.values(S.docs).filter(d=>d.kind===x.kind&&d.branch===x.branch&&Number(d.yr)===x.yr&&d.no).map(d=>`${d.no.n}-${d.no.sub||0}`));
+        const list=x.list.filter(p=>{const k=`${p.no.n}-${p.no.sub}`;if(have.has(k)){skip++;return false;}have.add(k);return true;});
+        let i=0;const worker=async()=>{while(i<list.length&&!st.stop){const p=list[i++];const d=impDocOf(x.kind,x.branch,p);
+            try{await writeDoc(d,true);if(x.yr>=Y-1)await noSlot(d,d.no);ok++;}catch(er){console.error(er);fail++;}
+            if((ok+fail)%10===0){m.textContent=`${KINDS[x.kind].label} ${branchById(x.branch).name} ${x.yr}년 · ${ok+skip}/${total}${fail?` (실패 ${fail})`:''}`;m.className='msg';}}};
+        await Promise.all([worker(),worker(),worker()]);
+        if(!st.stop&&!fail)await writeConfig(c=>{c.bulkImp={...(c.bulkImp||{})};c.bulkImp[x.key]='done';});}
+      m.textContent=st.stop?`멈췄어요. ${ok}건을 넣었어요. 다시 누르면 이어서 해요.`:`${ok}건을 넣었어요${skip?` (이미 있던 번호 ${skip}건은 건너뜀)`:''}${fail?`, 실패 ${fail}건은 다시 누르면 이어서 해요`:''}.`;m.className=fail||st.stop?'msg err':'msg good';}
+    catch(er){console.error(er);writeErr(er,m);}
+    finally{st.busy=false;S.bulk=false;render(true);const keep=m.textContent,kc=m.className;if(!st.stop)plan().then(()=>{m.textContent=keep;m.className=kc;}).catch(()=>{});}};
 }
 /* ---------- 기존 대장 불러오기 ---------- */
 const IMPF=[['no',['접수번호','시행번호','구입번호','발신번호','문서번호','번호']],['origNo',['원문서번호','문서번호']],['title',['제목','건명','품명']],['branch',['지점']],['fileCount',['파일건수']],['date',['접수일자','시행일자','시행일','발송일','기안일','작성일','결재일','일자']],['sender',['발송처','발신처']],['to',['수신','수신처']],['replyNeed',['회신요청']],['replyNo',['답신공문번호','답신번호','회신접수번호']],['authorName',['기안자','작성자','신청인','담당자','담당','접수자']],['note',['비고']],['amount',['금액','합계','구입액']],['vendor',['거래처','구입처']],['team',['주무부서','부서']]];
