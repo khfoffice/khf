@@ -646,7 +646,7 @@ td.nw{white-space:nowrap;font-variant-numeric:tabular-nums}
 <div class="wrap">
   <header class="top">
     <div>
-      <h1>재단 전자결재 <small id="appVer" style="font-size:12px;font-weight:500;color:var(--muted,#667);margin-left:6px"></small></h1>
+      <h1>재단 전자결재 <small id="appVer" style="font-size:12px;font-weight:500;color:var(--muted,#667);margin-left:6px"></small><button id="pwaInstall" class="btn sm" type="button" hidden style="margin-left:8px;vertical-align:middle">앱으로 설치</button></h1>
       <p class="sub" id="who">불러오는 중…</p>
     </div>
     <nav class="tabs" id="tabs" role="tablist"></nav>
@@ -655,8 +655,21 @@ td.nw{white-space:nowrap;font-variant-numeric:tabular-nums}
   <main id="view"></main>
 </div>
 <script>
+/* ================= 휴대폰 앱처럼 쓰기 (GitHub 버전) =================
+   안드로이드: 홈 화면에 설치하면 주소창 없이 앱처럼 열림 (ea-manifest)
+   아이폰: Microsoft 로그인이 끊기지 않도록 앱 모드는 쓰지 않고, 홈 화면 바로가기 아이콘만 (사파리에서 열림) */
+(function(){if(!/github\.io$/.test(location.hostname))return;
+  const ios=/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+  const add=(rel,href,x)=>{const l=document.createElement('link');l.rel=rel;l.href=href;if(x)Object.assign(l,x);document.head.appendChild(l);};
+  add('apple-touch-icon','ea-apple-touch-icon.png');add('icon','ea-icon-192.png',{sizes:'192x192'});
+  const m=document.createElement('meta');m.name='theme-color';m.content='#20406e';document.head.appendChild(m);
+  if(ios)return;
+  add('manifest','ea-manifest.webmanifest');
+  if('serviceWorker' in navigator)navigator.serviceWorker.register('ea-sw.js').catch(e=>console.warn('앱 설치 준비',e));
+  let ev=null;window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();ev=e;const b=document.getElementById('pwaInstall');if(b){b.hidden=false;b.onclick=async()=>{b.hidden=true;try{ev.prompt();await ev.userChoice;}catch(er){}ev=null;};}});
+  window.addEventListener('appinstalled',()=>{const b=document.getElementById('pwaInstall');if(b)b.hidden=true;});})();
 /* ================= 프로그램 버전 (고칠 때마다 올림) ================= */
-const APP_VER='2026.11.23 (v57)';
+const APP_VER='2026.11.23 (v58)';
 (function(){const put=()=>{const el=document.getElementById('appVer');if(el)el.textContent='버전 '+APP_VER;};put();document.addEventListener('DOMContentLoaded',put);
   // M365 버전: 서버에 새 버전이 올라왔는지 확인 (열 때 + 30분마다)
   // 새 버전이 올라와 있으면 '업데이트 중' 화면을 보여 주고 자동으로 새 버전을 연다 (작성 중인 글이 있으면 끝날 때까지 기다림)
