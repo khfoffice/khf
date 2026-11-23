@@ -683,7 +683,7 @@ button.file{font:inherit;font-size:12.5px;cursor:pointer}
       </section>
     </div>
   </div>
-<div class="muted small" style="text-align:center;margin-top:24px">프로그램 버전 2026.11.23-5</div>
+<div class="muted small" style="text-align:center;margin-top:24px">프로그램 버전 2026.11.23-6</div>
 </div>
 <script>
 /* ===== 휴대폰 앱처럼 쓰기: 안드로이드는 홈 화면 앱 설치, 아이폰은 바로가기 아이콘만 (로그인이 끊기지 않게) ===== */
@@ -693,7 +693,7 @@ button.file{font:inherit;font-size:12.5px;cursor:pointer}
   add('apple-touch-icon','leave-apple-touch-icon.png');add('icon','leave-icon-192.png','192x192');
   var m=document.createElement('meta');m.name='theme-color';m.content='#b02028';document.head.appendChild(m);
   if(ios)return;
-  add('manifest','leave-manifest.webmanifest');
+  add('manifest','leave-manifest.webmanifest?v=2');
   if('serviceWorker' in navigator)navigator.serviceWorker.register('leave-sw.js').catch(function(e){console.warn(e);});
   var ev=null;window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();ev=e;var b=document.getElementById('pwaInstall');if(b){b.hidden=false;b.onclick=function(){b.hidden=true;try{ev.prompt();}catch(er){}ev=null;};}});
   window.addEventListener('appinstalled',function(){var b=document.getElementById('pwaInstall');if(b)b.hidden=true;});})();
