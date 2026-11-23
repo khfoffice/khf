@@ -590,7 +590,7 @@ button.file{font:inherit;font-size:12.5px;cursor:pointer}
           <h2>기본 설정</h2>
           <div style="display:grid;gap:14px">
             <label class="f" style="grid-column:auto">회계연도 시작 월 <select id="sFsm"></select></label>
-            <label class="f" style="grid-column:auto">관리자 메일 (쉼표로 구분, 사이트 소유자여야 저장 가능) <input type="text" id="sAdmins" placeholder="thgu@kohem.org"></label>
+            <label class="f" style="grid-column:auto">관리자 메일 (쉼표로 구분, 사이트 소유자여야 저장 가능) <input type="text" id="sAdmins" placeholder="예: 관리자 메일 주소"></label>
             <label class="f" style="grid-column:auto">결재 지연 알림 기준 (올라온 뒤 며칠) <input type="number" id="sRemind" min="1" max="14" step="1"></label>
             <label class="f" style="grid-column:auto">1일 근무시간 <input type="number" id="sHpd" min="1" max="12" step="1"></label>
             <label class="f" style="grid-column:auto">토요 근무 (팀·국:주차:시간, 여러 개는 ;) <input type="text" id="sSat" placeholder="광주의원:2,4:4; 부산의원:2,4:4"></label>
@@ -683,7 +683,7 @@ button.file{font:inherit;font-size:12.5px;cursor:pointer}
       </section>
     </div>
   </div>
-<div class="muted small" style="text-align:center;margin-top:24px">프로그램 버전 2026.11.23-2</div>
+<div class="muted small" style="text-align:center;margin-top:24px">프로그램 버전 2026.11.23-3</div>
 </div>
 <script>
 /* ===== 재단 Microsoft 365 연결 정보 ===== */
@@ -2434,7 +2434,7 @@ async function importAll(file){
 }
 $('expBtn').addEventListener('click',exportAll);
 /* ---------- 매일 휴가·출장 현황 메일 ---------- */
-const DM=()=>C().dailyMail||{leads:true,people:['n:황설운','n:정종석','n:정연재'],extra:''};
+const DM=()=>C().dailyMail||{leads:true,people:[],extra:''};   // 받는 사람은 설정(공용 설정)에만 저장
 const idOfName=k=>{const R=C().roster||{};const x=R[k];return x&&x.uid?x.uid:k;};
 const mailOfId=id=>String(id).includes('@')?String(id):emailOf(id);
 function dmRecipients(){
@@ -2502,7 +2502,15 @@ async function runSyncDays(){
       if(want.has(it.title)){if(it.data!==want.get(it.title))await window.__days.put(it.id,it.title,want.get(it.title));want.delete(it.title);}
     }
     for(const [t,dat] of want) await window.__days.put(null,t,dat);
-    if(S.isAdmin){
+    if(S.isAdmin&&!C().dailyMail){
+      const cur0=have.find(it=>it.title==='__settings');
+      if(cur0){try{const to=String(JSON.parse(cur0.data||'{}').to||'').split(';').map(x=>x.trim().toLowerCase()).filter(Boolean);
+        const ids=allPeopleIds().filter(u=>!isRetired(u)), mailOf=u=>(mailOfId(u)||'').toLowerCase();
+        const people=ids.filter(u=>to.includes(mailOf(u))&&posAt(u,TODAY)!=='팀장').map(orderKeyOf);
+        const extra=to.filter(m=>!ids.some(u=>mailOf(u)===m)).join(', ');
+        await writeConfig(c=>{if(!c.dailyMail)c.dailyMail={leads:true,people,extra};});}catch(e){console.warn('dm migrate',e);}}
+    }
+    if(S.isAdmin&&C().dailyMail){
       const {to:rc}=dmRecipients(), sv=JSON.stringify({to:rc.map(x=>x.mail).join(';'),names:rc.map(x=>x.name),app:APP_URL});
       const cur=have.find(it=>it.title==='__settings');
       if(!cur||JSON.parse(cur.data||'{}').to!==JSON.parse(sv).to||JSON.parse(cur.data||'{}').app!==APP_URL) await window.__days.put(cur?.id,'__settings',sv);
