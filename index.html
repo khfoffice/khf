@@ -173,7 +173,7 @@ tr:last-child td{border-bottom:0}
 .rp-title{font-size:17pt;font-weight:700;color:#1f4e9a;letter-spacing:.02em}
 .rp-sub{font-size:8.5pt;color:#333;margin-top:1mm}
 .signs{border-collapse:collapse;font-size:7.5pt}
-.signs th,.signs td{border:.3mm solid #777;width:13mm;text-align:center;font-weight:500;color:#111;background:#fff}
+.signs th,.signs td,.signs tr:last-child td,.signs tr:last-child th{border:.3mm solid #777 !important;width:13mm;text-align:center;font-weight:500;color:#111;background:#fff}
 .signs th{height:4.5mm;background:#f2f2f2}.signs td{height:9mm}.signs th.sv{width:7mm;padding:0;line-height:1.7;writing-mode:horizontal-tb}
 table.rp{width:100%;border-collapse:collapse;table-layout:fixed;font-size:7.6pt;color:#111}
 .rp th,.rp td{border:.25mm solid #9a9a9a;padding:0 .8mm;height:4.7mm;line-height:1.15;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
@@ -683,7 +683,7 @@ button.file{font:inherit;font-size:12.5px;cursor:pointer}
       </section>
     </div>
   </div>
-<div class="muted small" style="text-align:center;margin-top:24px">프로그램 버전 2026.11.22-2</div>
+<div class="muted small" style="text-align:center;margin-top:24px">프로그램 버전 2026.11.23-2</div>
 </div>
 <script>
 /* ===== 재단 Microsoft 365 연결 정보 ===== */
@@ -2212,7 +2212,10 @@ function buildReport(kind,fy,mi){
   const months=fyMonths(fy), M=months[mi], cutoff=M.end, isYear=mi===11;
   const counted=kind==='annual'?['annual']:['comp'], shown=kind==='annual'?['annual','official','special']:['comp'];
   const rows=[]; const tot=Array(12).fill(0); let tEnt=0,tUsed=0;
-  orderedStaff(fy).forEach((x,idx)=>{
+  // 보고 월 기준 재직자만: 퇴직일이 보고 월 1일 전이면 빼고, 입사일이 보고 월 말일 뒤면 뺌
+  const staffM=orderedStaff(fy).filter(x=>!(x.end&&x.end<M.start)&&!(x.hire&&x.hire>M.end));
+  staffM.forEach((x,i)=>{x.grpStart=i===0||(staffM[i-1].team||'')!==(x.team||'');});
+  staffM.forEach((x,idx)=>{
     const u=x.u, p=P(u), use=Array(12).fill(0), items=[];
     for(const r of reqsOf(u)){
       if(!shown.includes(r.type)) continue;
