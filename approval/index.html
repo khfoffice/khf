@@ -229,12 +229,18 @@ function(e){return e.hasOwnProperty("authorization_endpoint")&&e.hasOwnProperty(
         const again=[];let ra=0;for(const x of r.responses||[]){if(x.status===200)out[x.body.id]=x.body;else if(x.status===429||x.status===503){again.push(todo[Number(x.id)]);ra=Math.max(ra,Number((x.headers||{})['Retry-After']||(x.headers||{})['retry-after'])||0);}}
         if(again.length){RQ.pauseUntil=Math.max(RQ.pauseUntil,Date.now()+Math.min(120,ra||2**(t+1))*1000);}todo=again;}}
     return out;}
+  async function fullQuery(path0,coll,flt,key,want){const out={};
+    let url=`${itemsUrl(path0)}?$expand=fields($select=Key,Data,Stamp)&$select=id,eTag,createdBy,lastModifiedBy&$filter=${encodeURIComponent(filterOf(coll,flt,key))}&$top=500`;
+    while(url){const r=await gx('GET',url,undefined,PREFER);for(const it of r.value||[])if(!want||want.has(it.id))out[it.id]=it;url=r['@odata.nextLink']||null;}
+    const miss=want?[...want].filter(id=>!out[id]):[];if(miss.length)Object.assign(out,await fullItems(path0,miss));
+    return out;}
   async function partsOf(path,n){let s='';for(let i=0;i<n;i++){const r=await gx('GET',`${itemsUrl(path)}?$expand=fields($select=Key,Data)&$filter=${encodeURIComponent(`fields/Key eq '${qv(path+'#'+i)}'`)}`,undefined,PREFER);const it=(r.value||[])[0];if(!it)throw new Error('나눠 저장한 조각을 찾지 못했어요: '+path);s+=it.fields?.Data||'';}return s;}
   async function decode(path,it){let raw=it.fields?.Data;if(raw==null||raw==='')return null;let v=JSON.parse(raw);if(v&&v.__p){v=JSON.parse(await partsOf(path,v.__p));}return v;}
   async function refresh(path0,coll,flt,key){
     const idx=await index(path0,coll,flt,key);const seen=new Set(),need=[];
     for(const it of idx){const p=it.fields?.Key;if(!p)continue;seen.add(p);const c=cache.get(p);const st=String(it.fields?.Stamp||'')+'|'+(it.eTag||'');if(!c||c.stamp!==st)need.push(it.id);}
-    const full=need.length?await fullItems(path0,need):{};
+    // 바뀐 항목이 많으면(처음 여는 연도 등) 20개씩 나눠 받지 않고, 목록 조회 한 번에 내용까지 받는다 (요청 수 수십 분의 1)
+    const full=need.length>40?await fullQuery(path0,coll,flt,key,new Set(need)):need.length?await fullItems(path0,need):{};
     for(const it of idx){const p=it.fields?.Key;if(!p)continue;const f=full[it.id];if(!f)continue;
       try{const data=await decode(p,f);cache.set(p,{id:it.id,etag:f.eTag,stamp:String(f.fields?.Stamp||'')+'|'+(it.eTag||''),data,ok:trusted(p,f),parts:(()=>{try{const v=JSON.parse(f.fields?.Data||'null');return v&&v.__p||0;}catch{return 0;}})()});idbMark(p);}
       catch(e){console.error('읽기 실패',p,e);}}
@@ -669,7 +675,7 @@ td.nw{white-space:nowrap;font-variant-numeric:tabular-nums}
   let ev=null;window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();ev=e;const b=document.getElementById('pwaInstall');if(b){b.hidden=false;b.onclick=async()=>{b.hidden=true;try{ev.prompt();await ev.userChoice;}catch(er){}ev=null;};}});
   window.addEventListener('appinstalled',()=>{const b=document.getElementById('pwaInstall');if(b)b.hidden=true;});})();
 /* ================= 프로그램 버전 (고칠 때마다 올림) ================= */
-const APP_VER='2026.11.23 (v58)';
+const APP_VER='2026.11.24 (v59)';
 (function(){const put=()=>{const el=document.getElementById('appVer');if(el)el.textContent='버전 '+APP_VER;};put();document.addEventListener('DOMContentLoaded',put);
   // M365 버전: 서버에 새 버전이 올라왔는지 확인 (열 때 + 30분마다)
   // 새 버전이 올라와 있으면 '업데이트 중' 화면을 보여 주고 자동으로 새 버전을 연다 (작성 중인 글이 있으면 끝날 때까지 기다림)
@@ -2169,18 +2175,21 @@ function viewLedger(v){
   const fk=S.sub.lfk||'all';
   const list=Object.values(S.docs).filter(d=>(kind==='form'?!!FORMS[d.kind]&&(fk==='all'||d.kind===fk):d.kind===kind)&&!d.deleted&&Number(d.yr)===Number(yr)&&(br==='all'||d.branch===br)&&(d.no||d.kind==='in'||['pending','approved'].includes(ev(d).status))&&(!q||squash(LCOLS[kind].map(([,f])=>f(d)).join(' ')).includes(squash(q)))).sort(kind==='form'?((a,b)=>String(docDate(b)||b.draftDate||'').localeCompare(String(docDate(a)||a.draftDate||''))):byNoDesc);
   const cols=LCOLS[kind];
-  const qi=h('input',{id:'lq',type:'search',value:q,placeholder:'제목·발송처·번호로 찾기',style:'max-width:260px',oninput:e=>{S.sub.lq=e.target.value;clearTimeout(viewLedger.t);viewLedger.t=setTimeout(()=>{render(true);const el=$('lq');if(el){el.focus();el.setSelectionRange(el.value.length,el.value.length);}},300);}});
+  const qi=h('input',{id:'lq',type:'search',value:q,placeholder:'제목·발송처·번호로 찾기',style:'max-width:260px',oninput:e=>{S.sub.lq=e.target.value;S.sub.lmore=0;clearTimeout(viewLedger.t);viewLedger.t=setTimeout(()=>{render(true);const el=$('lq');if(el){el.focus();el.setSelectionRange(el.value.length,el.value.length);}},300);}});
   const m=h('div',{class:'msg'});
   v.append(h('section',{class:'panel'},
-    h('div',{class:'seg',style:'max-width:620px;margin-bottom:12px'},[['in','수신'],['out','발신'],['gian','기안'],['buy','물품결의'],['form','신청서'],['etc','기타']].map(([k2,t])=>h('button',{type:'button','aria-pressed':kind===k2?'true':'false',onclick:()=>{S.sub.lk=k2;render(true);}},t))),
-    h('div',{class:'row between'},h('div',{class:'row'},h('select',{id:'lb',onchange:e=>{S.sub.lb=e.target.value;render(true);}},h('option',{value:'all'},'전체 지점'),C().branches.map(b=>h('option',{value:b.id,selected:br===b.id},b.name))),yearSel('ly',yr,x=>{S.sub.ly=x;loadYear(x);render(true);}),kind==='form'?h('select',{id:'lfk','aria-label':'신청서 종류',onchange:e=>{S.sub.lfk=e.target.value;render(true);}},h('option',{value:'all'},'모든 신청서'),Object.keys(FORMS).map(k2=>h('option',{value:k2,selected:fk===k2},KINDS[k2].label))):null,qi),
+    h('div',{class:'seg',style:'max-width:620px;margin-bottom:12px'},[['in','수신'],['out','발신'],['gian','기안'],['buy','물품결의'],['form','신청서'],['etc','기타']].map(([k2,t])=>h('button',{type:'button','aria-pressed':kind===k2?'true':'false',onclick:()=>{S.sub.lk=k2;S.sub.lmore=0;render(true);}},t))),
+    h('div',{class:'row between'},h('div',{class:'row'},h('select',{id:'lb',onchange:e=>{S.sub.lb=e.target.value;S.sub.lmore=0;render(true);}},h('option',{value:'all'},'전체 지점'),C().branches.map(b=>h('option',{value:b.id,selected:br===b.id},b.name))),yearSel('ly',yr,x=>{S.sub.ly=x;S.sub.lmore=0;loadYear(x);render(true);}),kind==='form'?h('select',{id:'lfk','aria-label':'신청서 종류',onchange:e=>{S.sub.lfk=e.target.value;S.sub.lmore=0;render(true);}},h('option',{value:'all'},'모든 신청서'),Object.keys(FORMS).map(k2=>h('option',{value:k2,selected:fk===k2},KINDS[k2].label))):null,qi),
       h('div',{class:'row'},m,h('button',{class:'btn ghost sm',type:'button',onclick:()=>backupDialog(yr)},'백업 (zip)'),S.isAdmin&&kind!=='form'&&kind!=='etc'?h('button',{class:'btn ghost sm',type:'button',onclick:()=>importDialog(kind,yr)},'기존 대장 불러오기'):null,S.isAdmin?h('button',{class:'btn ghost sm',type:'button',onclick:()=>bulkLedgerDialog()},'예전 대장 한꺼번에'):null,S.isAdmin&&['in','out','gian','buy'].includes(kind)?h('button',{class:'btn ghost sm',type:'button',onclick:()=>scanDialog(kind,yr)},'스캔파일 연결'):null,h('button',{class:'btn sm',type:'button',onclick:()=>xlsxSave(`${kind==='form'?'신청서':KINDS[kind].short}대장_${yr}.xlsx`,[{name:`${kind==='form'?'신청서':KINDS[kind].short}대장`,title:`${yr}년 ${kind==='form'?(fk!=='all'?KINDS[fk].label:'신청서'):KINDS[kind].label} 대장${br!=='all'?' · '+branchById(br).name:''}`,rows:[cols.map(c=>c[0]),...list.slice().reverse().map(d=>cols.map(([,f])=>f(d)))],cols:cols.map(([t])=>t==='제목'?44:0)}]).catch(er=>{console.error(er);m.textContent='엑셀을 만들지 못했어요.';m.className='msg err';})},'엑셀 내려받기')))));
-  v.append(h('section',{class:'panel'},h('p',{class:'small muted',style:'margin:0 0 8px'},`${list.length}건${S.isAdmin?' · 관리자는 모든 문서를 봐요':' · 내가 관련된 문서와 이관 문서 목록이 보여요 (이관 문서 내용은 담당·지정자만)'}`),list.length?h('div',{class:'tbl'},h('table',{class:'t'},h('tr',{},cols.map(([t])=>h('th',{},t))),list.map(d=>h('tr',{class:'click',onclick:()=>go('ledger',{open:d.id})},cols.map(([t,f])=>{const val=f(d);return h('td',{class:t==='제목'?'':(typeof val==='number'?'num':'nw')},typeof val==='number'&&t!=='파일건수'?won(val):val);}))))):h('p',{class:'empty'},'해당하는 문서가 없어요.')));
+  const lim=S.sub.lmore||200,shown=list.slice(0,lim),loadingY=yearLoading.has(Number(yr));
+  v.append(h('section',{class:'panel'},loadingY?h('p',{class:'notice small',style:'margin:0 0 8px'},`${yr}년 문서를 불러오는 중이에요… 처음 한 번만 시간이 걸리고, 다음부터는 이 PC에 저장돼 바로 열려요.`):null,h('p',{class:'small muted',style:'margin:0 0 8px'},`${list.length}건${S.isAdmin?' · 관리자는 모든 문서를 봐요':' · 내가 관련된 문서와 이관 문서 목록이 보여요 (이관 문서 내용은 담당·지정자만)'}`),list.length?h('div',{class:'tbl'},h('table',{class:'t'},h('tr',{},cols.map(([t])=>h('th',{},t))),shown.map(d=>h('tr',{class:'click',onclick:()=>go('ledger',{open:d.id})},cols.map(([t,f])=>{const val=f(d);return h('td',{class:t==='제목'?'':(typeof val==='number'?'num':'nw')},typeof val==='number'&&t!=='파일건수'?won(val):val);}))))):h('p',{class:'empty'},loadingY?'불러오는 중…':'해당하는 문서가 없어요.'),
+    list.length>lim?h('div',{class:'row',style:'justify-content:center;margin-top:10px'},h('button',{class:'btn ghost',type:'button',onclick:()=>{S.sub.lmore=lim+300;render(true);}},`더 보기 (${list.length-lim}건 남음)`)):null));
 }
 const loadedYears=new Set();
 async function ingestWait(){for(let i=0;i<600;i++){if(!ingesting&&!ingestAgain)return;await (ingesting||new Promise(r=>setTimeout(r,50)));await new Promise(r=>setTimeout(r,10));}}
 async function loadYearWait(y){if(y>=new Date().getFullYear()-1)return;if(!loadedYears.has(y))await loadYear(y);await ingestWait();}
-async function loadYear(y){if(loadedYears.has(y)||!S.db||y>=new Date().getFullYear()-1)return;loadedYears.add(y);try{const snap=await S.db.collection('docs').where('yr','==',Number(y)).get();for(const x of snap.docs)rawDocs[x.id]=x.data();ingest();}catch(e){console.error(e);loadedYears.delete(y);}}
+const yearLoading=new Set();
+async function loadYear(y){if(loadedYears.has(y)||!S.db||y>=new Date().getFullYear()-1)return;loadedYears.add(y);yearLoading.add(y);try{const snap=await S.db.collection('docs').where('yr','==',Number(y)).get();for(const x of snap.docs)rawDocs[x.id]=x.data();ingest();await ingestWait();}catch(e){console.error(e);loadedYears.delete(y);}finally{yearLoading.delete(y);if(S.tab==='ledger'&&!S.edit)render(true);else soon();}}
 
 /* ---------- 이전 문서 스캔파일 연결 ----------
    파일 이름 규칙: 00 2025 001 00 001 .jpg = 기관코드(2) 연도(4) 번호(3) 가지번호(2) 쪽(3)
