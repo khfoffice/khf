@@ -675,7 +675,7 @@ td.nw{white-space:nowrap;font-variant-numeric:tabular-nums}
   let ev=null;window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();ev=e;const b=document.getElementById('pwaInstall');if(b){b.hidden=false;b.onclick=async()=>{b.hidden=true;try{ev.prompt();await ev.userChoice;}catch(er){}ev=null;};}});
   window.addEventListener('appinstalled',()=>{const b=document.getElementById('pwaInstall');if(b)b.hidden=true;});})();
 /* ================= 프로그램 버전 (고칠 때마다 올림) ================= */
-const APP_VER='2026.11.24 (v59)';
+const APP_VER='2026.11.24 (v61)';
 (function(){const put=()=>{const el=document.getElementById('appVer');if(el)el.textContent='버전 '+APP_VER;};put();document.addEventListener('DOMContentLoaded',put);
   // M365 버전: 서버에 새 버전이 올라왔는지 확인 (열 때 + 30분마다)
   // 새 버전이 올라와 있으면 '업데이트 중' 화면을 보여 주고 자동으로 새 버전을 연다 (작성 중인 글이 있으면 끝날 때까지 기다림)
@@ -964,11 +964,13 @@ function impListInfo(d){const o={};for(const k of ['title','date','draftDate','r
 async function fullDoc(id){const cur=S.docs[id];if(!cur||!cur._lazy)return cur;const raw=rawDocs[id];if(!raw)return cur;openDoc.full=true;let d;try{d=await openDoc(raw);}finally{openDoc.full=false;}if(d){S.docs[id]=d;}return S.docs[id];}
 // 관리자: 화면이 뜬 뒤 쉬는 동안 이관 문서를 조금씩 풀어 둔다 (담당자 열쇠 나눠 주기용)
 let lazyBg=false;async function lazyWarm(){if(lazyBg||!S.isAdmin||S.readOnly)return;lazyBg=true;try{for(;;){const ids=Object.values(S.docs).filter(d=>d._lazy).slice(0,15).map(d=>d.id);if(!ids.length)break;for(const id of ids)await fullDoc(id);await new Promise(r=>setTimeout(r,400));}}finally{lazyBg=false;}syncKeys();}
+// 이관 문서에 담당자(관리자 말고 열쇠를 받은 사람)가 있는지: 있으면 목록도 그 사람들과 관리자만 본다
+function impHasDam(raw){const ad=new Set(C().admins||[]);return Object.keys(raw.keys||{}).some(u=>!ad.has(u));}
 async function openDoc(raw){
   if(!raw.enc)return null;
   const clear={};for(const k of CLEAR)if(raw[k]!==undefined)clear[k]=raw[k];
   const c=K.plain[raw.id];if(c&&c.iv===raw.enc.iv)return {...c.body,...clear,_keys:raw.keys||{},_kn:raw.kn||{}};   // 이미 푼 문서
-  const w=raw.keys&&raw.keys[S.me];if(!w||!K.priv)return raw.imported&&raw.pub?{...raw.pub,...clear,files:[],scans:[],_locked:true,_keys:raw.keys||{},_kn:raw.kn||{}}:null;
+  const w=raw.keys&&raw.keys[S.me];if(!w||!K.priv)return null;   // 열쇠가 없는 문서(이관 문서 포함)는 목록에도 나오지 않음: 결재자·담당·지정자·관리자만
   if(raw.imported&&raw.pub&&!openDoc.full)return {...raw.pub,...clear,files:[],scans:[],_lazy:true,_keys:raw.keys||{},_kn:raw.kn||{}};   // 이관 문서는 열 때 내용을 푼다
   try{const key=await crypto.subtle.unwrapKey('raw',unb64(w),K.priv,RSA,{name:'AES-GCM'},true,['encrypt','decrypt']);
     const pt=await crypto.subtle.decrypt({name:'AES-GCM',iv:unb64(raw.enc.iv)},key,unb64(raw.enc.ct));
@@ -2182,7 +2184,7 @@ function viewLedger(v){
     h('div',{class:'row between'},h('div',{class:'row'},h('select',{id:'lb',onchange:e=>{S.sub.lb=e.target.value;S.sub.lmore=0;render(true);}},h('option',{value:'all'},'전체 지점'),C().branches.map(b=>h('option',{value:b.id,selected:br===b.id},b.name))),yearSel('ly',yr,x=>{S.sub.ly=x;S.sub.lmore=0;loadYear(x);render(true);}),kind==='form'?h('select',{id:'lfk','aria-label':'신청서 종류',onchange:e=>{S.sub.lfk=e.target.value;S.sub.lmore=0;render(true);}},h('option',{value:'all'},'모든 신청서'),Object.keys(FORMS).map(k2=>h('option',{value:k2,selected:fk===k2},KINDS[k2].label))):null,qi),
       h('div',{class:'row'},m,h('button',{class:'btn ghost sm',type:'button',onclick:()=>backupDialog(yr)},'백업 (zip)'),S.isAdmin&&kind!=='form'&&kind!=='etc'?h('button',{class:'btn ghost sm',type:'button',onclick:()=>importDialog(kind,yr)},'기존 대장 불러오기'):null,S.isAdmin?h('button',{class:'btn ghost sm',type:'button',onclick:()=>bulkLedgerDialog()},'예전 대장 한꺼번에'):null,S.isAdmin&&['in','out','gian','buy'].includes(kind)?h('button',{class:'btn ghost sm',type:'button',onclick:()=>scanDialog(kind,yr)},'스캔파일 연결'):null,h('button',{class:'btn sm',type:'button',onclick:()=>xlsxSave(`${kind==='form'?'신청서':KINDS[kind].short}대장_${yr}.xlsx`,[{name:`${kind==='form'?'신청서':KINDS[kind].short}대장`,title:`${yr}년 ${kind==='form'?(fk!=='all'?KINDS[fk].label:'신청서'):KINDS[kind].label} 대장${br!=='all'?' · '+branchById(br).name:''}`,rows:[cols.map(c=>c[0]),...list.slice().reverse().map(d=>cols.map(([,f])=>f(d)))],cols:cols.map(([t])=>t==='제목'?44:0)}]).catch(er=>{console.error(er);m.textContent='엑셀을 만들지 못했어요.';m.className='msg err';})},'엑셀 내려받기')))));
   const lim=S.sub.lmore||200,shown=list.slice(0,lim),loadingY=yearLoading.has(Number(yr));
-  v.append(h('section',{class:'panel'},loadingY?h('p',{class:'notice small',style:'margin:0 0 8px'},`${yr}년 문서를 불러오는 중이에요… 처음 한 번만 시간이 걸리고, 다음부터는 이 PC에 저장돼 바로 열려요.`):null,h('p',{class:'small muted',style:'margin:0 0 8px'},`${list.length}건${S.isAdmin?' · 관리자는 모든 문서를 봐요':' · 내가 관련된 문서와 이관 문서 목록이 보여요 (이관 문서 내용은 담당·지정자만)'}`),list.length?h('div',{class:'tbl'},h('table',{class:'t'},h('tr',{},cols.map(([t])=>h('th',{},t))),shown.map(d=>h('tr',{class:'click',onclick:()=>go('ledger',{open:d.id})},cols.map(([t,f])=>{const val=f(d);return h('td',{class:t==='제목'?'':(typeof val==='number'?'num':'nw')},typeof val==='number'&&t!=='파일건수'?won(val):val);}))))):h('p',{class:'empty'},loadingY?'불러오는 중…':'해당하는 문서가 없어요.'),
+  v.append(h('section',{class:'panel'},loadingY?h('p',{class:'notice small',style:'margin:0 0 8px'},`${yr}년 문서를 불러오는 중이에요… 처음 한 번만 시간이 걸리고, 다음부터는 이 PC에 저장돼 바로 열려요.`):null,h('p',{class:'small muted',style:'margin:0 0 8px'},`${list.length}건${S.isAdmin?' · 관리자는 모든 문서를 봐요':' · 내가 결재했거나 담당·지정된 문서만 보여요'}`),list.length?h('div',{class:'tbl'},h('table',{class:'t'},h('tr',{},cols.map(([t])=>h('th',{},t))),shown.map(d=>h('tr',{class:'click',onclick:()=>go('ledger',{open:d.id})},cols.map(([t,f])=>{const val=f(d);return h('td',{class:t==='제목'?'':(typeof val==='number'?'num':'nw')},typeof val==='number'&&t!=='파일건수'?won(val):val);}))))):h('p',{class:'empty'},loadingY?'불러오는 중…':'해당하는 문서가 없어요.'),
     list.length>lim?h('div',{class:'row',style:'justify-content:center;margin-top:10px'},h('button',{class:'btn ghost',type:'button',onclick:()=>{S.sub.lmore=lim+300;render(true);}},`더 보기 (${list.length-lim}건 남음)`)):null));
 }
 const loadedYears=new Set();
