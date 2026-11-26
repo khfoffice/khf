@@ -675,7 +675,7 @@ td.nw{white-space:nowrap;font-variant-numeric:tabular-nums}
   let ev=null;window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();ev=e;const b=document.getElementById('pwaInstall');if(b){b.hidden=false;b.onclick=async()=>{b.hidden=true;try{ev.prompt();await ev.userChoice;}catch(er){}ev=null;};}});
   window.addEventListener('appinstalled',()=>{const b=document.getElementById('pwaInstall');if(b)b.hidden=true;});})();
 /* ================= 프로그램 버전 (고칠 때마다 올림) ================= */
-const APP_VER='2026.11.24 (v61)';
+const APP_VER='2026.11.26 (v62)';
 (function(){const put=()=>{const el=document.getElementById('appVer');if(el)el.textContent='버전 '+APP_VER;};put();document.addEventListener('DOMContentLoaded',put);
   // M365 버전: 서버에 새 버전이 올라왔는지 확인 (열 때 + 30분마다)
   // 새 버전이 올라와 있으면 '업데이트 중' 화면을 보여 주고 자동으로 새 버전을 연다 (작성 중인 글이 있으면 끝날 때까지 기다림)
@@ -747,8 +747,8 @@ const normKeep=k=>({'1년':'3년','3년':'3년','5년':'10년','10년':'10년','
 const PAYS=['가지급','미지급','어음','현금','기타'];
 /* ================= 개인정보 보호 (개인정보 보호법 제21·23·24조의2·29조, 안전성 확보조치 기준) =================
    M365로 옮길 때도 그대로 쓰는 규칙: 저장 전 검사, 첨부 잠금, 열람 기록, 퇴사자 권한 회수, 보존기간 지난 문서 파기 */
-const RETAIN_DEF={expense:'10년',etc:'3년',gian:'3년',buy:'10년',out:'10년',in:'10년',sms:'3년',condol:'10년',subsidy:'10년',repair:'10년',overtime:'3년',allow:'3년',report:'10년'};
-const RETAIN_WHY={expense:'제2종 5) 경리 관련 장부·증빙 (세법상 5년 이상)',gian:'기본 제3종(일반문서). 규정·이사회·사업계획·중요 계약은 영구, 관공서 제출은 10년으로 문서마다 고르세요',out:'제2종 2) 대외 수·발신 문서',in:'제2종 2) 대외 수·발신 문서',buy:'제2종 5) 경리 관련 장부·증빙 (세법상 5년 이상)',condol:'제2종 (회계 증빙, 세법상 5년 이상)',subsidy:'제2종 (회계 증빙, 세법상 5년 이상)',repair:'제2종 (회계 증빙, 세법상 5년 이상)',overtime:'제3종 (근로기준법 제42조 3년)',allow:'제3종 (근로기준법 제42조 3년)',sms:'제3종 1) 일반 왕복문서',etc:'기본 제3종. 문서마다 고르세요',report:'제2종 4) 업무일지에 준함'};
+const RETAIN_DEF={parttime:'10년',expense:'10년',etc:'3년',gian:'3년',buy:'10년',out:'10년',in:'10년',sms:'3년',condol:'10년',subsidy:'10년',repair:'10년',overtime:'3년',allow:'3년',report:'10년'};
+const RETAIN_WHY={parttime:'제2종 5) 경리 관련 장부·증빙 (세법상 5년 이상)',expense:'제2종 5) 경리 관련 장부·증빙 (세법상 5년 이상)',gian:'기본 제3종(일반문서). 규정·이사회·사업계획·중요 계약은 영구, 관공서 제출은 10년으로 문서마다 고르세요',out:'제2종 2) 대외 수·발신 문서',in:'제2종 2) 대외 수·발신 문서',buy:'제2종 5) 경리 관련 장부·증빙 (세법상 5년 이상)',condol:'제2종 (회계 증빙, 세법상 5년 이상)',subsidy:'제2종 (회계 증빙, 세법상 5년 이상)',repair:'제2종 (회계 증빙, 세법상 5년 이상)',overtime:'제3종 (근로기준법 제42조 3년)',allow:'제3종 (근로기준법 제42조 3년)',sms:'제3종 1) 일반 왕복문서',etc:'기본 제3종. 문서마다 고르세요',report:'제2종 4) 업무일지에 준함'};
 const PII_PHONE=/(?<!\d)01[016789][-.\s]?\d{3,4}[-.\s]?\d{4}(?!\d)/;
 const PII_MED=/(진단서|진료기록|의무기록|진단명|병명|소견서|처방전|검사\s?결과|주민등록번호|주민번호)/;
 function piiFindings(pairs){const out={block:[],warn:[]};
@@ -1519,7 +1519,7 @@ function finalLevelOf(d){
   if(d.kind==='buy')return buyLevel(buyTotalVat(d),d.goods!==false);
   if(d.rule==='manual')return Number(d.manualLevel)||1;
   const r=RULES.find(x=>x.id===d.rule);return r?r.l:0;}
-const NO_TITLE_KINDS=['subsidy','condol','buy','sms','overtime','allow','expense'];   // 제목 칸 없이 자동 제목
+const NO_TITLE_KINDS=['subsidy','condol','buy','sms','overtime','allow','expense','parttime'];   // 제목 칸 없이 자동 제목
 const PRINT_KINDS=NO_TITLE_KINDS.filter(k=>!['overtime','allow'].includes(k));   // 결재 완료 뒤 출력해서 회계팀에 내는 신청서 (시간외·수당은 출력 제출 없음)
 function autoTitle(d){if(d.kind==='buy'){const n=(d.items||[]).map(x=>String(x.name||'').trim()).filter(Boolean);return `물품구입 - ${n[0]||'물품'}${n.length>1?` 외 ${n.length-1}건`:''}`;}return FORMS[d.kind]?FORMS[d.kind].title(d):(d.title||'');}
 const PRINT_NOTE='결재가 끝났어요. 결재문서를 출력(인쇄 또는 PDF)해서 회계팀에 전달해 주세요.';
@@ -2389,6 +2389,7 @@ const AGG={
   overtime:{basis:'month',hours:true,sum:d=>[`${(d.rows||[]).filter(x=>x.day).length}일 (${prevMonthPeriod(d.month)})`,Math.round(sumBy(d.rows,x=>hoursOf(x.from,x.to))*10)/10]},
   condol:{basis:'done',sum:d=>[`${d.ctype||''}${d.reason?' ('+d.reason+')':''}`,Number(d.amount)||0]},
   subsidy:{basis:'done',sum:d=>[`${String(d.stype||'').split(',')[0]} · ${d.content||''}${d.usePlace?' ('+d.usePlace+')':''}`,Number(d.amount)||0]},
+  parttime:{basis:'month',sum:d=>[`${d.worker||''} ${ptDays(d)}일 (실수령 ${won(ptCalc(d).net)}원)`,ptCalc(d).pay]},
   expense:{basis:'done',sum:d=>{const r=(d.rows||[]).filter(x=>x.content||Number(x.amount));return [`${branchById(d.branch).name} · ${r.map(x=>(x.cat?x.cat+' ':'')+(x.content||'')).join(', ')}`,sumBy(r,x=>x.amount)];}},
   repair:{basis:'done',sum:d=>[(d.rows||[]).map(x=>x.name).filter(Boolean).join(', ')+(d.vendor?' / '+d.vendor:''),sumBy(d.rows,x=>x.cost)]}};
 const aggName=k=>(KINDS[k]?.label||k).replace(/\s*(지급)?신청서$/,'');
@@ -2721,6 +2722,10 @@ function hanWon(n){n=Math.round(Number(n)||0);if(!n)return '영';const dg='영�
   while(n>0){const part=n%10000;if(part){let p='',x=part,j=0;while(x>0){const v=x%10;if(v)p=(v===1&&j>0?'':dg[v])+u[j]+p;x=Math.floor(x/10);j++;}s=p+big[i]+s;}n=Math.floor(n/10000);i++;}return s;}
 const wonText=n=>`일금 ${hanWon(n)}원정 ( ￦${won(n)} )`;
 const DOWK='일월화수목금토';
+// 단기직 급여 계산
+const ptDays=d=>(d.days||[]).length;
+function ptCalc(d){const r=d.r||{},n=d.n||{},num=v=>Number(v)||0;const items={day:ptDays(d)*num(r.day),hol:num(n.hol)*num(r.day),ot:num(n.ot)*num(r.ot),night:num(n.night)*num(r.night),holiday:num(n.holiday)*num(r.holiday),meal:num(n.meal)*num(r.meal)};
+  const pay=Object.values(items).reduce((a,b)=>a+b,0),ded=Object.values(d.ded||{}).reduce((a,b)=>a+num(b),0);return {items,pay,ded,net:pay-ded};}
 const fmtDay=s=>{if(!s)return '';const d=parse(s);return `${d.getMonth()+1}/${d.getDate()}(${DOWK[d.getDay()]})`;};
 // 시각 고르기: 시(00~23)와 분(10분 단위) 두 칸
 const timeSel10=f=>(x,tr,upd)=>{const [hh,mm]=String(x[f]||'').split(':');const set=()=>{const a=hs.value,b=ms.value;x[f]=a!==''&&b!==''?`${a}:${b}`:'';upd();};
@@ -2835,6 +2840,54 @@ const FORMS={
       signLine(d),
       h('div',{style:'margin-top:6mm;font-size:9pt'},h('b',{},'<별 첨> 보조금 지급기준'),kvTable([['자녀학비 보조금','대학교 1학기당 100만원'],['자기계발·문화생활 보조금','업무관련 교육, 건강증진을 위한 체력단련 등 자기계발에 필요한 교육비용 및 공연, 전시, 도서구입, 여행 등 정서함양에 필요한 문화생활비를 연 70만원 한도 내에서 지원한다.\n※ 2026. 1. 1. 이후부터 통합하여 적용\n※ 여행은 숙박비, 체험활동비, 입장료에 한함']],40))])},
 
+  parttime:{label:'단기직 급여지급 신청서',short:'단기직급여',desc:'단기직 월 급여 · 지난달 신청서 불러와서 날짜만 고쳐 올리기',lv:d=>buyLevel(ptCalc(d).pay,false),sig:['month','worker','belong','empFrom','empTo','days','n','r','ded','account','holder','memo'],amount:d=>ptCalc(d).pay,
+    init:d=>{const t=new Date();d.month=`${t.getFullYear()}-${pad(t.getMonth()+1)}`;d.worker='';d.belong=[branchById(branchOfKey(d.author)).name,R(d.author)?.team].filter(Boolean).join(' | ');d.empFrom='';d.empTo='';d.days=[];d.n={hol:0,ot:0,night:0,holiday:0,meal:0};d.r={day:0,meal:0,ot:0,night:0,holiday:0};d.ded={};d.account='';d.holder='';d.memo='';},
+    title:d=>`단기직 급여지급 신청 (${d.month?d.month.replace('-','년 ')+'월':''}) ${d.worker||''}`,
+    check:d=>!String(d.worker||'').trim()?'근로자 성명을 넣어 주세요.':!d.month?'급여 월을 골라 주세요.':!ptDays(d)?'근무한 날을 달력에서 골라 주세요.':!(Number(d.r?.day)>0)?'일급(산출근거)을 넣어 주세요.':null,
+    edit(d,form,{refreshSteps}){d.n=d.n||{};d.r=d.r||{};d.ded=d.ded||{};d.days=d.days||[];
+      const tot=h('div',{class:'small',style:'font-weight:600'});const upd=()=>{const c=ptCalc(d);tot.textContent=`근무 ${ptDays(d)}일 · 지급합계 ${won(c.pay)}원 · 공제합계 ${won(c.ded)}원 · 실수령액 ${won(c.net)}원`;refreshSteps();};
+      // 지난 신청서 불러오기 (내가 작성한 단기직 급여 신청서)
+      const prev=Object.values(S.docs).filter(x=>x.kind==='parttime'&&x.id!==d.id&&!x.deleted&&!x._lazy&&!x._locked&&(x.authorUid===S.me||x.author===d.author)).sort((a,b)=>String(b.month||'').localeCompare(String(a.month||''))||(b.updatedAt||0)-(a.updatedAt||0));
+      const nextM=m=>{if(!m)return d.month;const [y,mm]=m.split('-').map(Number);const n=new Date(y,mm,1);return `${n.getFullYear()}-${pad(n.getMonth()+1)}`;};
+      if(prev.length)form.append(h('div',{class:'f s6 rulebox'},h('span',{},'지난 신청서 불러오기 (근로자·고용기간·단가·계좌를 그대로 가져오고, 급여 월은 다음 달로, 근무일은 비워요)'),
+        h('div',{class:'row'},h('select',{id:'ptPrev','aria-label':'지난 신청서'},h('option',{value:''},`불러올 신청서 고르기 (${prev.length}건)`),prev.slice(0,30).map(x=>h('option',{value:x.id},`${x.month||''} · ${x.worker||''} · ${STATUS[ev(x).status]||''}`))),
+          h('button',{type:'button',class:'btn sm',onclick:()=>{const x=S.docs[$('ptPrev').value];if(!x)return;for(const f of ['worker','belong','empFrom','empTo','account','holder','memo'])d[f]=x[f]||'';d.r={...(x.r||{})};d.n={hol:0,ot:0,night:0,holiday:0,meal:0};d.ded={...(x.ded||{})};d.days=[];d.month=nextM(x.month);d.attach=x.attach||'';render(true);}},'불러오기'))));
+      const N=(o,k,label,ph)=>h('label',{class:'f s1'},label,h('input',{type:'number',min:0,value:d[o][k]??'',placeholder:ph||'',oninput:e=>{d[o][k]=e.target.value;upd();}}));
+      const cal=h('div',{class:'f s6'});
+      const drawCal=()=>{const [y,m]=(d.month||'').split('-').map(Number);if(!y){cal.replaceChildren();return;}const last=new Date(y,m,0).getDate();const sel=new Set((d.days||[]).map(Number));
+        cal.replaceChildren(h('span',{},`근무한 날 (${y}년 ${m}월 · 누르면 표시/해제)`),h('div',{style:'display:grid;grid-template-columns:repeat(auto-fill,minmax(52px,1fr));gap:4px'},Array.from({length:last},(_,i)=>{const day=i+1,w=new Date(y,m-1,day).getDay();const on=sel.has(day);
+          return h('button',{type:'button',class:'btn sm'+(on?'':' ghost'),style:`padding:4px 0;${w===0?'color:'+(on?'#fff':'#c0392b'):w===6?'color:'+(on?'#fff':'#2c5aa0'):''}`,'aria-pressed':on?'true':'false',onclick:()=>{const s=new Set((d.days||[]).map(Number));s.has(day)?s.delete(day):s.add(day);d.days=[...s].sort((a,b)=>a-b);drawCal();upd();}},`${day}`,h('br'),h('small',{},DOWK[w]));})),
+          h('div',{class:'row',style:'margin-top:6px'},h('button',{type:'button',class:'btn ghost sm',onclick:()=>{d.days=Array.from({length:last},(_,i)=>i+1).filter(x=>{const w=new Date(y,m-1,x).getDay();return w!==0&&w!==6;});drawCal();upd();}},'평일 모두 선택'),h('button',{type:'button',class:'btn ghost sm',onclick:()=>{d.days=[];drawCal();upd();}},'모두 해제')));};
+      form.append(h('label',{class:'f s1'},'급여 월',h('input',{type:'month',id:'e_month',value:d.month||'',oninput:e=>{d.month=e.target.value;d.days=(d.days||[]).filter(x=>{const [y,m]=d.month.split('-').map(Number);return x<=new Date(y,m,0).getDate();});drawCal();upd();}})),
+        textIn(d,'worker','근로자 성명','f s1','예: 김현명',upd),textIn(d,'belong','소속','f s2','예: 서울의원 | 간호팀'),
+        h('label',{class:'f s1'},'고용기간 시작',h('input',{type:'date',value:d.empFrom||'',oninput:e=>d.empFrom=e.target.value})),h('label',{class:'f s1'},'고용기간 끝',h('input',{type:'date',value:d.empTo||'',oninput:e=>d.empTo=e.target.value})),
+        cal,
+        h('div',{class:'f s6 small muted',style:'margin:4px 0 -4px'},'산출근거 (단가, 원)'),N('r','day','일급'),N('r','meal','식대 (1일)'),N('r','ot','연장근무 단가'),N('r','night','야간근무 단가'),N('r','holiday','휴일근무 단가'),
+        h('div',{class:'f s6 small muted',style:'margin:4px 0 -4px'},'지급 일수 (일급 일수 = 근무한 날 수, 자동)'),N('n','hol','주휴수당 일수'),N('n','ot','연장근무 일수'),N('n','night','야간근무 일수'),N('n','holiday','휴일근무 일수'),N('n','meal','식대 일수'),
+        h('div',{class:'f s6 small muted',style:'margin:4px 0 -4px'},'공제 (원 · 회계팀에서 계산하면 비워 두세요)'),N('ded','tax','소득세'),N('ded','ltax','지방소득세'),N('ded','pension','국민연금'),N('ded','emp','고용보험'),N('ded','health','건강보험'),N('ded','care','노인장기요양'),
+        textIn(d,'account','지급계좌','f s3','예: 하나은행 810-199102-01307'),textIn(d,'holder','예금주','f s2','예: 김현명'),textIn(d,'memo','비고','f s6',''),
+        h('div',{class:'f s6'},tot));drawCal();setTimeout(upd);},
+    paper:d=>{const c=ptCalc(d),[y,m]=(d.month||'').split('-').map(Number),last=y?new Date(y,m,0).getDate():31,sel=new Set((d.days||[]).map(Number));
+      const cell=(v,st)=>h('td',{style:'text-align:center;'+(st||'')},v==null?'':String(v));
+      const calRow=(from,to)=>{const ds=Array.from({length:16},(_,i)=>from+i);return [h('tr',{},ds.map(x=>x<=to?h('th',{style:'font-size:7.5pt;padding:.6mm 0;font-weight:500;white-space:pre-line;line-height:1.2'+(y&&[0,6].includes(new Date(y,m-1,x).getDay())?';color:'+(new Date(y,m-1,x).getDay()?'#2c5aa0':'#c0392b'):'')},`${x}\n${y?DOWK[new Date(y,m-1,x).getDay()]:''}`):h('th',{}))),h('tr',{},ds.map(x=>cell(x<=to&&sel.has(x)?'●':'','height:6mm;font-size:9pt')))];};
+      const pays=[['일급',ptDays(d),c.items.day],['주휴수당',d.n?.hol||0,c.items.hol],['연장근무수당',d.n?.ot||0,c.items.ot],['야간근무수당',d.n?.night||0,c.items.night],['휴일근무수당',d.n?.holiday||0,c.items.holiday],['식대',d.n?.meal||0,c.items.meal]];
+      const deds=[['소득세','tax'],['지방소득세','ltax'],['국민연금','pension'],['고용보험','emp'],['건강보험','health'],['노인장기요양','care']];
+      return formPaper(d,'급 여 지 급 신 청 서',[
+        h('table',{},h('colgroup',{},['22mm','','24mm','30mm'].map(w=>h('col',w?{style:'width:'+w}:{}))),
+          h('tr',{},h('th',{},'고용기간'),h('td',{},`${dot(d.empFrom||'')} ~ ${dot(d.empTo||'')}`),h('th',{},'실수령액'),h('td',{class:'r',style:'font-weight:700'},won(c.net))),
+          h('tr',{},h('th',{},'성    명'),h('td',{style:'font-weight:700'},d.worker||''),h('th',{},'지급합계'),h('td',{class:'r'},won(c.pay))),
+          h('tr',{},h('th',{},'소    속'),h('td',{},d.belong||''),h('th',{},'공제합계'),h('td',{class:'r'},won(c.ded))),
+          h('tr',{},h('th',{},'급여정산기간'),h('td',{},y?`${y}.${pad(m)}.01. ~ ${y}.${pad(m)}.${pad(last)}.`:''),h('th',{},'총 근무일수'),h('td',{class:'r'},`${ptDays(d)}일`)),
+          h('tr',{},h('th',{},'급여지급일'),h('td',{colspan:3},y?`${y}. ${m}. ${last}.`:''))),
+        h('div',{style:'display:grid;grid-template-columns:1fr 1fr;gap:3mm;margin-top:3mm'},
+          h('table',{class:'items'},h('tr',{},['지급항목','일수','금액'].map(x=>h('th',{},x))),pays.map(([l,n,a])=>h('tr',{},h('td',{},l),cell(n||''),h('td',{class:'r'},a?won(a):''))),h('tr',{},h('th',{colspan:2},'지급합계'),h('td',{class:'r',style:'font-weight:700'},won(c.pay)))),
+          h('table',{class:'items'},h('tr',{},['공제항목','금액'].map(x=>h('th',{},x))),deds.map(([l,k])=>h('tr',{},h('td',{},l),h('td',{class:'r'},Number(d.ded?.[k])?won(d.ded[k]):''))),h('tr',{},h('th',{},'공제합계'),h('td',{class:'r',style:'font-weight:700'},won(c.ded))))),
+        h('div',{style:'margin:3mm 0 1mm;font-weight:700;font-size:10pt'},'월간 근무현황'),
+        h('table',{class:'items',style:'table-layout:fixed'},...calRow(1,Math.min(16,last)),...calRow(17,last)),
+        h('table',{class:'items',style:'margin-top:3mm'},h('colgroup',{},['30mm','','40mm'].map(w=>h('col',w?{style:'width:'+w}:{}))),h('tr',{},['구분','산출근거','비고'].map(x=>h('th',{},x))),
+          [['일급',d.r?.day],['식대 (1일)',d.r?.meal],['연장근무 단가',d.r?.ot],['야간근무 단가',d.r?.night],['휴일근무 단가',d.r?.holiday]].filter(([,v])=>Number(v)).map(([l,v])=>h('tr',{},h('td',{class:'c'},l),h('td',{class:'r'},won(v)+'원'),h('td',{}))),
+          h('tr',{},h('td',{class:'c'},'지급계좌'),h('td',{},d.account||''),h('td',{},d.holder?'예금주: '+d.holder:''))),
+        d.memo?kvTable([['비    고',d.memo]],24):null,signLine(d,'신 청 자')]);}},
   expense:{label:'지출결의서',short:'지출결의',desc:'세금계산서 등 지출 (기관별) · 금액으로 전결 자동',lv:d=>buyLevel(sumBy(d.rows,x=>x.amount),false),sig:['rows','account','memo'],amount:d=>sumBy(d.rows,x=>x.amount),
     init:d=>{d.rows=[{cat:'',content:'',amount:''}];d.account='';d.memo='';d.attach='세금계산서 1부.';},
     title:d=>{const r=(d.rows||[]).filter(x=>x.content);return `지출결의 - ${r[0]?.content||'지출'}${r.length>1?` 외 ${r.length-1}건`:''} (${branchById(d.branch).name})`;},
