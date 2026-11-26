@@ -675,7 +675,7 @@ td.nw{white-space:nowrap;font-variant-numeric:tabular-nums}
   let ev=null;window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();ev=e;const b=document.getElementById('pwaInstall');if(b){b.hidden=false;b.onclick=async()=>{b.hidden=true;try{ev.prompt();await ev.userChoice;}catch(er){}ev=null;};}});
   window.addEventListener('appinstalled',()=>{const b=document.getElementById('pwaInstall');if(b)b.hidden=true;});})();
 /* ================= 프로그램 버전 (고칠 때마다 올림) ================= */
-const APP_VER='2026.11.26 (v65)';
+const APP_VER='2026.11.26 (v66)';
 (function(){const put=()=>{const el=document.getElementById('appVer');if(el)el.textContent='버전 '+APP_VER;};put();document.addEventListener('DOMContentLoaded',put);
   // M365 버전: 서버에 새 버전이 올라왔는지 확인 (열 때 + 30분마다)
   // 새 버전이 올라와 있으면 '업데이트 중' 화면을 보여 주고 자동으로 새 버전을 연다 (작성 중인 글이 있으면 끝날 때까지 기다림)
@@ -825,7 +825,7 @@ function mondayOf(s){const d=parse(s);const w=(d.getDay()+6)%7;d.setDate(d.getDa
 const S={db:null,user:null,assets:null,me:null,myName:'',isAdmin:false,readOnly:false,
   cfg:{},links:{},dec:{},docs:{},nos:{},wk:{},wkFor:null,mo:{},moFor:null,PS:{},
   tab:'inbox',sub:{},edit:null,open:null,armed:null,ready:{cfg:false,docs:false}};
-const C=()=>{const c=S.cfg||{};return{...c,roster:c.roster||{},positions:Array.isArray(c.positions)&&c.positions.length?c.positions:DEF_POS,branches:Array.isArray(c.branches)&&c.branches.length?c.branches:DEF_BRANCHES,depts:Array.isArray(c.depts)&&c.depts.length?c.depts:DEF_DEPTS,org:{...DEF_ORG,...(c.org||{})},teamBranch:c.teamBranch||{},away:c.away||{},proxies:c.proxies||{}};};
+const C=()=>{const c=S.cfg||{};return{...c,roster:c.roster||{},positions:Array.isArray(c.positions)&&c.positions.length?c.positions:DEF_POS,branches:Array.isArray(c.branches)&&c.branches.length?c.branches:DEF_BRANCHES,depts:Array.isArray(c.depts)&&c.depts.length?c.depts:DEF_DEPTS,org:{...DEF_ORG,...(c.org||{})},teamBranch:c.teamBranch||{},away:c.away||{},proxies:c.proxies||{},lines:c.lines||{}};};
 const R=k=>C().roster[k]||null;
 function rosterOrdered(){const all=Object.keys(C().roster),ord=(Array.isArray(S.cfg?.rosterOrder)?S.cfg.rosterOrder:[]).filter(k=>C().roster[k]);const seen=new Set(ord);
   const rest=all.filter(k=>!seen.has(k)).sort((a,b)=>String(R(a).team||'힣').localeCompare(String(R(b).team||'힣'),'ko')||lvl(b)-lvl(a)||nameK(a).localeCompare(nameK(b),'ko'));return [...ord,...rest];}
@@ -1526,23 +1526,23 @@ const PRINT_NOTE='결재가 끝났어요. 결재문서를 출력(인쇄 또는 P
 const DAM_KINDS=['condol','subsidy','overtime'];   // 신청인과 처리 담당이 다른 신청서 (담당은 관리 › 신청서 집계에서 지정)
 const damOf=d=>d.kind==='in'?d.assignee:(DAM_KINDS.includes(d.kind)?d.dam:null);
 const baseKey=d=>{const dm=damOf(d);return dm&&R(dm)?dm:d.author;};
-/* 광주·부산의원: 원장이 이사장·상임이사를 겸직하므로 원장 결재가 들어가는 문서는 원장 전결,
-   그 뒤에 사무국장·상무가 협조(확인)로 결재한다. 그 의원에 원장이 없거나 팀장 전결 문서면 기존 결재선 그대로. */
-const DUAL_CLINIC=b=>/광주|부산/.test((C().branches.find(x=>x.id===b)||{}).name||'');
-function clinicHead(b){return Object.keys(C().roster).find(k=>lvl(k)===2&&/원장/.test(R(k).pos||'')&&branchOfKey(k)===b)||null;}
-function clinicLine(d,fl){const base=baseKey(d),b=branchOfKey(base);if(fl<2||!DUAL_CLINIC(b))return null;const head=clinicHead(b);if(!head||head===base||lvl(base)>=2)return null;
-  const s=buildSteps(base,1).map(x=>({key:x.key,level:x.level}));s.push({key:head,level:2,final:true});
-  const ks=Object.keys(C().roster),used=new Set([base,head,d.author]);
-  const dir=ks.find(k=>lvl(k)===2&&/국장/.test(R(k).pos||'')&&branchOfKey(k)==='hq'&&!used.has(k))||ks.find(k=>lvl(k)===2&&!/원장/.test(R(k).pos||'')&&branchOfKey(k)==='hq'&&!used.has(k));
-  const sm=ks.find(k=>lvl(k)===3&&/상무|상임/.test(R(k).pos||'')&&!used.has(k))||ks.find(k=>lvl(k)===3&&!used.has(k));
-  const post=[dir,sm].filter(Boolean).map(k=>({key:k,coop:true,post:true}));return {s,post};}
-function computeSteps(d){const fl=finalLevelOf(d);if(!fl)return null;const cl=clinicLine(d,fl);let s=cl?cl.s:buildSteps(baseKey(d),fl);
+/* 기관별 기본 결재선 (관리 › 결재선 설정). 작성자 소속 기관에 설정이 켜져 있으면 그 결재선을 쓰고, 없거나 꺼져 있으면 기존 자동 결재선. */
+function customLine(d,fl){const base=baseKey(d),b=branchOfKey(base),L=C().lines[b];if(!L||!L.on)return null;
+  let appr=(L.appr||[]).filter(k=>R(k));if(!appr.length)return null;
+  const i=appr.indexOf(base);if(i>=0)appr=appr.slice(i+1);
+  const all=[];if(L.team&&lvl(base)<1&&i<0){const tl=candidates(1,base)[0];if(tl&&!appr.includes(tl))all.push({key:tl,level:1});}
+  for(const k of appr)if(!all.some(x=>x.key===k))all.push({key:k,level:Math.min(4,Math.max(1,lvl(k)))});
+  let s=all;if(L.cut){s=[];for(const x of all){s.push(x);if(x.level>=fl)break;}}
+  if(s.length)s[s.length-1].final=true;
+  const full=s.length===all.length,co=full?(L.coop||[]).filter(k=>R(k)&&k!==base&&k!==d.author&&!s.some(x=>x.key===k)):[];
+  return {s,co,after:L.coopAt!=='before',b};}
+function computeSteps(d){const fl=finalLevelOf(d);if(!fl)return null;const cl=customLine(d,fl);let s=cl?cl.s:buildSteps(baseKey(d),fl);
   if(DAM_KINDS.includes(d.kind)&&damOf(d)&&damOf(d)!==d.author&&s.some(x=>x.key===d.author)){   // 신청인이 결재선에 있으면 본인 결재는 건너뜀
     if(s.some(x=>x.key===d.author&&x.final)&&fl<4)s=buildSteps(baseKey(d),Math.max(fl,lvl(d.author))+1);
     s=s.filter(x=>x.key!==d.author);if(s.length&&!s.some(x=>x.final))s[s.length-1].final=true;}
   if(d.stepOverride){s=s.map(x=>d.stepOverride[x.level]&&R(d.stepOverride[x.level])?{...x,key:d.stepOverride[x.level]}:x);}
   s=stepsWithCoop(s,(d.coop||[]).filter(k=>R(k)&&k!==baseKey(d)));
-  if(cl)s=[...s,...cl.post.filter(p=>!s.some(x=>x.key===p.key))];
+  if(cl&&cl.co.length){const add=cl.co.filter(k=>!s.some(x=>x.key===k));s=cl.after?[...s,...add.map(k=>({key:k,coop:true,post:true}))]:stepsWithCoop(s,add);}
   {const dm=damOf(d);if(dm&&R(dm)&&dm!==d.author){s=[{key:dm,level:lvl(dm),dam:true},...s];if(s.length===1)s[0].final=true;}}
   return s;}
 function rulePicker(d,onch){
@@ -1573,9 +1573,9 @@ function stepsPanel(d,refresh){
   const box=h('div',{class:'steps'});
   const s=computeSteps(d);
   if(!s){box.append(h('p',{class:'muted small'},d.kind==='buy'?'품목과 금액을 넣으면 결재선이 정해져요.':'전결 기준을 고르면 결재선이 정해져요.'));return box;}
-  const fl=finalLevelOf(d);
-  const cl=clinicLine(d,fl);
-  if(cl)box.append(h('div',{class:'small'},'전결권자 ',h('span',{class:'final'},`${branchById(branchOfKey(baseKey(d))).name} 원장`),`  · 원장 전결 후 사무국장·상무가 협조(확인)해요. (위임전결 기준: ${LV[fl]})`));
+  const fl=finalLevelOf(d);const cl=customLine(d,fl);
+  const fin=cl&&cl.s.length?cl.s[cl.s.length-1].key:null;
+  if(cl)box.append(h('div',{class:'small'},`${branchById(cl.b).name} 기본 결재선 (관리 › 결재선 설정) · 최종 결재 `,h('span',{class:'final'},fin?`${nameK(fin)} ${R(fin)?.pos||''}`:'작성자')));
   else box.append(h('div',{class:'small'},'전결권자 ',h('span',{class:'final'},LV[fl]),lvl(baseKey(d))>=fl?(d.kind==='in'?'  · 담당자가 전결권자라 올리면 바로 결재 완료돼요.':'  · 기안자가 전결권자라 올리면 바로 결재 완료돼요.'):''));
   box.append(h('div',{class:'stepRow'},h('span',{class:'lab'},d.kind==='in'?'접수':'기안'),h('span',{},`${nameK(d.author)} · ${R(d.author)?.pos||''}`+(d.kind==='in'&&!d.assignee?' (담당자를 고르면 담당자부터 결재해요)':'')),h('span',{})));
   for(const st of s){
@@ -1712,7 +1712,7 @@ function docView(d){if(d._locked)return lockedView(d);if(d._lazy){fullDoc(d.id).
     const huBox=canHu?h('label',{class:'row small',style:'gap:6px;align-items:flex-start'},h('input',{type:'checkbox',id:'huChk'}),h('span',{},'긴급: 최종 결재권자의 후결을 받기로 하고 먼저 시행 (제26조③ · 재단에 중대한 영향을 미치는 문서는 안 돼요)')):null;
     const decide=async v=>{if(v==='no'&&!note.value.trim()){m.textContent='반려 사유를 적어 주세요.';m.className='msg err';return;}
       try{const nt=note.value.trim();const huOn=v==='ok'&&canHu&&!!$('huChk')?.checked;if(huOn&&!nt){m.textContent='먼저 시행하는 긴급 사유를 의견에 적어 주세요.';m.className='msg err';return;}await writeDec({[`${d.id}:${e.idx}`]:{v,sig:e.sig,at:Date.now(),as:act==='proxy'?st.key:undefined,hu:huOn||undefined}});if(nt)await patchDoc(d.id,{notes:{...(d.notes||{}),[e.idx]:{note:nt,sig:e.sig}}});mailAfterDecide(d,e,v,huOn,nt);notice(v==='ok'?(st.coop?'협조했어요.':'결재했어요.'):'반려했어요.');setTimeout(()=>notice(''),2500);go('inbox');}catch(er){writeErr(er,m);}};
-    side.append(h('section',{class:'panel acts'},h('h2',{style:'margin:0'},e.hugyeol?'후결 (먼저 시행된 문서)':act==='proxy'?`대결 (${nameK(st.key)} 부재)`:st.post?'협조 (원장 전결 문서 확인)':st.coop?'협조':`${LV[st.level]} 결재${st.final?' · 전결':''}`),note,huBox,m,
+    side.append(h('section',{class:'panel acts'},h('h2',{style:'margin:0'},e.hugyeol?'후결 (먼저 시행된 문서)':act==='proxy'?`대결 (${nameK(st.key)} 부재)`:st.post?'협조 (결재 끝난 문서 확인)':st.coop?'협조':`${LV[st.level]} 결재${st.final?' · 전결':''}`),note,huBox,m,
       h('div',{class:'row'},h('button',{class:'btn ok',type:'button',disabled:S.readOnly,onclick:()=>decide('ok')},st.post?'확인':st.coop?'동의':'결재'),h('button',{class:'btn bad',type:'button',disabled:S.readOnly,onclick:()=>decide('no')},st.coop?'이견(반려)':'반려'))));}
   if(d.kind==='in')side.append(inActions(d));
   if(d.kind==='sms'&&e.status==='approved'&&(isAuthor||S.isAdmin)){const ri=h('textarea',{id:'smsRes',rows:2,placeholder:'예: 11.5 14:00 발송 완료 (1,250건)'},d.result||''),rm=h('div',{class:'msg'});
@@ -2399,11 +2399,11 @@ function awayPanel(){const k=myKey();if(!k||lvl(k)<1)return null;const cur=S.lin
 const _viewMine=viewMine;viewMine=function(v){_viewMine(v);const a=awayPanel();if(a)v.append(a);const sp=signPanel();if(sp)v.append(sp);};
 
 /* ---------- 관리 ---------- */
-const ASUB=[['staff','직원·연결'],['away','부재·직무대리'],['branch','지점·번호'],['seal','직인·기관정보'],['weekly','업무보고 부서'],['agg','신청서 집계'],['privacy','개인정보 보호']];
+const ASUB=[['staff','직원·연결'],['lines','결재선 설정'],['away','부재·직무대리'],['branch','지점·번호'],['seal','직인·기관정보'],['weekly','업무보고 부서'],['agg','신청서 집계'],['privacy','개인정보 보호']];
 function viewAdmin(v){if(!S.isAdmin){v.append(h('section',{class:'panel'},h('p',{class:'empty'},'관리자만 볼 수 있어요.')));return;}
   const sub=S.sub.admin||'staff';
   v.append(h('div',{class:'seg',style:'max-width:720px;margin-bottom:14px'},ASUB.map(([k,t])=>h('button',{type:'button','aria-pressed':sub===k?'true':'false',onclick:()=>{S.sub.admin=k;render(true);}},t))));
-  ({staff:adminStaff,away:adminAway,branch:adminBranch,seal:adminSeal,weekly:adminWeekly,agg:adminAgg,privacy:adminPrivacy}[sub])(v);}
+  ({staff:adminStaff,lines:adminLines,away:adminAway,branch:adminBranch,seal:adminSeal,weekly:adminWeekly,agg:adminAgg,privacy:adminPrivacy}[sub])(v);}
 /* ---------- 관리 › 신청서 집계: 종류별·월별로 모아 지급 결의 기안을 만든다 ---------- */
 const AGG={
   allow:{basis:'month',sum:d=>{const c={};for(const x of d.rows||[])if(x.kind&&(x.day||Number(x.amount)))c[x.kind]=(c[x.kind]||0)+1;return [Object.entries(c).map(([k,n])=>`${k} ${n}회`).join(', '),sumBy(d.rows,x=>x.amount)];}},
@@ -2731,6 +2731,28 @@ function adminSeal(v){adminGmArt(v);
         h('label',{class:'btn sm',style:'cursor:pointer'},bo.seal?.id?'직인 바꾸기':'직인 올리기',h('input',{type:'file',accept:'image/png,image/jpeg,image/svg+xml',hidden:true,onchange:async e=>{const fl=e.target.files[0];e.target.value='';if(!fl)return;const [a]=await uploadFiles([fl],m,{plain:true});if(a)try{await setSeal({id:a.id,name:fl.name,at:Date.now()});m.textContent='직인을 저장했어요.';m.className='msg good';}catch(er){writeErr(er,m);}}})),
         bo.seal?.id?armBtn('rmSeal'+b.id,'직인 빼기','정말 뺄까요?',()=>setSeal(null).catch(writeErr)):null,m)));}
 }
+function adminLines(v){
+  const save=(b,fn)=>writeConfig(c=>{c.lines=clone(C().lines||{});const L=c.lines[b]=c.lines[b]||{on:false,team:true,appr:[],coop:[],coopAt:'after',cut:false};fn(L);}).then(()=>render(true)).catch(writeErr);
+  v.append(h('section',{class:'panel'},h('h2',{},'결재선 설정'),h('p',{class:'muted small',style:'margin-top:-6px'},'기관마다 기본 결재선과 협조자를 정해요. 작성자 소속 기관의 설정이 쓰이고, "직접 설정"을 끄거나 결재자가 비어 있으면 지금처럼 직급에 따라 자동으로 정해져요. 바꾼 설정은 앞으로 올리는 문서부터 적용돼요.')));
+  for(const br of C().branches){const L={on:false,team:true,appr:[],coop:[],coopAt:'after',cut:false,...(C().lines[br.id]||{})};const nm=br.id==='hq'?br.name+' (사무국)':br.name;
+    const list=(f,lab)=>h('div',{class:'f s3'},h('span',{},lab),
+      h('ol',{style:'margin:4px 0;padding-left:20px'},(L[f]||[]).map((k,i,a)=>h('li',{style:'margin:3px 0'},h('span',{class:'row',style:'gap:6px'},`${nameK(k)} · ${R(k)?.pos||'(명단에 없음)'}`,
+        f==='appr'?h('button',{class:'btn ghost sm',type:'button',disabled:i===0,onclick:()=>save(br.id,l=>{[l[f][i-1],l[f][i]]=[l[f][i],l[f][i-1]];})},'↑'):null,
+        f==='appr'?h('button',{class:'btn ghost sm',type:'button',disabled:i===a.length-1,onclick:()=>save(br.id,l=>{[l[f][i+1],l[f][i]]=[l[f][i],l[f][i+1]];})},'↓'):null,
+        h('button',{class:'btn ghost sm',type:'button',onclick:()=>save(br.id,l=>l[f].splice(i,1))},'빼기'))))),
+      h('select',{'aria-label':lab+' 추가',onchange:e=>{const k=e.target.value;if(k)save(br.id,l=>{l[f]=[...(l[f]||[]).filter(x=>x!==k),k];});}},h('option',{value:''},'+ 사람 추가'),personOpts('',k=>lvl(k)>=1&&!(L[f]||[]).includes(k))));
+    const ck=(f,lab)=>h('label',{class:'row small',style:'gap:6px'},h('input',{type:'checkbox',checked:!!L[f],onchange:e=>save(br.id,l=>l[f]=e.target.checked)}),lab);
+    const ex=[];if(L.team)ex.push('팀장(있으면)');(L.appr||[]).forEach((k,i,a)=>ex.push(nameK(k)+(i===a.length-1?'(최종)':'')));const exC=(L.coop||[]).map(k=>nameK(k)+'(협조)');
+    const exTxt=['작성자',...(L.coopAt==='before'?[...ex.slice(0,-1),...exC,...ex.slice(-1)]:[...ex,...exC])].join(' → ');
+    v.append(h('section',{class:'panel'},h('div',{class:'row between'},h('h2',{style:'margin:0'},nm),
+        h('div',{class:'seg'},[[false,'자동 (직급 기준)'],[true,'직접 설정']].map(([x,tx])=>h('button',{type:'button','aria-pressed':!!L.on===x?'true':'false',onclick:()=>save(br.id,l=>l.on=x)},tx)))),
+      L.on?h('div',{class:'grid',style:'margin-top:10px'},
+        list('appr','결재자 (위에서부터 차례로, 맨 아래가 최종 결재·전결)'),list('coop','협조자'),
+        h('div',{class:'f s6',style:'gap:6px'},ck('team','작성자 팀에 팀장이 있으면 팀장 결재를 맨 앞에 넣기'),
+          ck('cut','위임전결 단계까지만 올리기 (끄면 모든 문서가 맨 아래 결재자까지 가요)'),
+          h('div',{class:'row small',style:'gap:10px'},h('span',{},'협조 순서'),[['after','최종 결재 뒤 (확인)'],['before','최종 결재 앞']].map(([x,tx])=>h('label',{class:'row',style:'gap:4px'},h('input',{type:'radio',name:'ca'+br.id,checked:(L.coopAt||'after')===x,onchange:()=>save(br.id,l=>l.coopAt=x)}),tx))),
+          h('p',{class:'small muted',style:'margin:0'},'협조자는 결재선이 맨 아래 결재자까지 갈 때만 붙어요. 결재자 본인이 쓴 문서는 그다음 결재자부터 올라가요.'),
+          h('p',{class:'small',style:'margin:0'},'예: '+exTxt))):h('p',{class:'small muted',style:'margin:8px 0 0'},'직급에 따라 자동으로 정해져요 (팀장 → 국원장 → 상무 → 이사장 중 전결 단계까지).')));}}
 function adminWeekly(v){const ds=C().depts;const saveD=fn=>writeConfig(c=>{c.depts=clone(C().depts);fn(c.depts);}).catch(writeErr);
   v.append(h('section',{class:'panel'},h('h2',{},'업무보고 부서'),h('p',{class:'muted small',style:'margin-top:-6px'},'주간업무보고 작성 부서와 취합본·PPT에 나오는 순서예요. 월간업무보고는 복지지원팀·기획관리팀·간호팀·진료지원팀 4개 팀으로 고정돼 있어요.'),
     h('div',{class:'tbl'},h('table',{class:'t'},ds.map((d,i)=>h('tr',{},h('td',{},h('input',{value:d.name,style:'width:160px',onchange:e=>saveD(l=>l[i].name=e.target.value.trim()||d.name)})),
