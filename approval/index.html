@@ -675,7 +675,7 @@ td.nw{white-space:nowrap;font-variant-numeric:tabular-nums}
   let ev=null;window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();ev=e;const b=document.getElementById('pwaInstall');if(b){b.hidden=false;b.onclick=async()=>{b.hidden=true;try{ev.prompt();await ev.userChoice;}catch(er){}ev=null;};}});
   window.addEventListener('appinstalled',()=>{const b=document.getElementById('pwaInstall');if(b)b.hidden=true;});})();
 /* ================= 프로그램 버전 (고칠 때마다 올림) ================= */
-const APP_VER='2026.11.26 (v64)';
+const APP_VER='2026.11.26 (v65)';
 (function(){const put=()=>{const el=document.getElementById('appVer');if(el)el.textContent='버전 '+APP_VER;};put();document.addEventListener('DOMContentLoaded',put);
   // M365 버전: 서버에 새 버전이 올라왔는지 확인 (열 때 + 30분마다)
   // 새 버전이 올라와 있으면 '업데이트 중' 화면을 보여 주고 자동으로 새 버전을 연다 (작성 중인 글이 있으면 끝날 때까지 기다림)
@@ -1253,7 +1253,7 @@ function signTable(d,label='결 재'){
     h('tr',{},h('th',{rowspan:2,style:'writing-mode:vertical-rl;letter-spacing:.3em'},label),LV.map(t=>h('th',{},t))),h('tr',{},signCells(d)));
 }
 function coopRow(d,span=3){const e=ev(d),co=(e.steps||[]).map((s,i)=>({...s,i})).filter(s=>s.coop);if(!co.length)return null;
-  return h('tr',{},h('th',{},'협 조'),h('td',{colspan:span},co.map(s=>{const x=e.done[s.i];return `${R(s.key)?.team||''} ${nameK(s.key)}${x?` (${x.v==='ok'?'동의':'이견'} ${mmdd(x.at)})`:''}`;}).join(',  ')));}
+  return h('tr',{},h('th',{},'협 조'),h('td',{colspan:span},co.map(s=>{const x=e.done[s.i];return `${s.post?(R(s.key)?.pos||''):(R(s.key)?.team||'')} ${nameK(s.key)}${x?` (${x.v==='ok'?(s.post?'확인':'동의'):'이견'} ${mmdd(x.at)})`:''}`;}).join(',  ')));}
 function opinions(d){const e=ev(d),out={};(e.steps||[]).forEach((s,i)=>{const x=e.done[i];if(x&&x.note&&!s.coop)out[s.level]=(out[s.level]?out[s.level]+'\n':'')+x.note;});return out;}
 function attachText(d){const a=(d.attach||'').trim();if(a)return a;const f=d.files||[];return f.length?f.map((x,i)=>`${i+1}. ${x.name.replace(/\.[^.]+$/,'')} 1부.`).join('\n')+'  끝.':'';}
 
@@ -1526,12 +1526,23 @@ const PRINT_NOTE='결재가 끝났어요. 결재문서를 출력(인쇄 또는 P
 const DAM_KINDS=['condol','subsidy','overtime'];   // 신청인과 처리 담당이 다른 신청서 (담당은 관리 › 신청서 집계에서 지정)
 const damOf=d=>d.kind==='in'?d.assignee:(DAM_KINDS.includes(d.kind)?d.dam:null);
 const baseKey=d=>{const dm=damOf(d);return dm&&R(dm)?dm:d.author;};
-function computeSteps(d){const fl=finalLevelOf(d);if(!fl)return null;let s=buildSteps(baseKey(d),fl);
+/* 광주·부산의원: 원장이 이사장·상임이사를 겸직하므로 원장 결재가 들어가는 문서는 원장 전결,
+   그 뒤에 사무국장·상무가 협조(확인)로 결재한다. 그 의원에 원장이 없거나 팀장 전결 문서면 기존 결재선 그대로. */
+const DUAL_CLINIC=b=>/광주|부산/.test((C().branches.find(x=>x.id===b)||{}).name||'');
+function clinicHead(b){return Object.keys(C().roster).find(k=>lvl(k)===2&&/원장/.test(R(k).pos||'')&&branchOfKey(k)===b)||null;}
+function clinicLine(d,fl){const base=baseKey(d),b=branchOfKey(base);if(fl<2||!DUAL_CLINIC(b))return null;const head=clinicHead(b);if(!head||head===base||lvl(base)>=2)return null;
+  const s=buildSteps(base,1).map(x=>({key:x.key,level:x.level}));s.push({key:head,level:2,final:true});
+  const ks=Object.keys(C().roster),used=new Set([base,head,d.author]);
+  const dir=ks.find(k=>lvl(k)===2&&/국장/.test(R(k).pos||'')&&branchOfKey(k)==='hq'&&!used.has(k))||ks.find(k=>lvl(k)===2&&!/원장/.test(R(k).pos||'')&&branchOfKey(k)==='hq'&&!used.has(k));
+  const sm=ks.find(k=>lvl(k)===3&&/상무|상임/.test(R(k).pos||'')&&!used.has(k))||ks.find(k=>lvl(k)===3&&!used.has(k));
+  const post=[dir,sm].filter(Boolean).map(k=>({key:k,coop:true,post:true}));return {s,post};}
+function computeSteps(d){const fl=finalLevelOf(d);if(!fl)return null;const cl=clinicLine(d,fl);let s=cl?cl.s:buildSteps(baseKey(d),fl);
   if(DAM_KINDS.includes(d.kind)&&damOf(d)&&damOf(d)!==d.author&&s.some(x=>x.key===d.author)){   // 신청인이 결재선에 있으면 본인 결재는 건너뜀
     if(s.some(x=>x.key===d.author&&x.final)&&fl<4)s=buildSteps(baseKey(d),Math.max(fl,lvl(d.author))+1);
     s=s.filter(x=>x.key!==d.author);if(s.length&&!s.some(x=>x.final))s[s.length-1].final=true;}
   if(d.stepOverride){s=s.map(x=>d.stepOverride[x.level]&&R(d.stepOverride[x.level])?{...x,key:d.stepOverride[x.level]}:x);}
   s=stepsWithCoop(s,(d.coop||[]).filter(k=>R(k)&&k!==baseKey(d)));
+  if(cl)s=[...s,...cl.post.filter(p=>!s.some(x=>x.key===p.key))];
   {const dm=damOf(d);if(dm&&R(dm)&&dm!==d.author){s=[{key:dm,level:lvl(dm),dam:true},...s];if(s.length===1)s[0].final=true;}}
   return s;}
 function rulePicker(d,onch){
@@ -1563,10 +1574,13 @@ function stepsPanel(d,refresh){
   const s=computeSteps(d);
   if(!s){box.append(h('p',{class:'muted small'},d.kind==='buy'?'품목과 금액을 넣으면 결재선이 정해져요.':'전결 기준을 고르면 결재선이 정해져요.'));return box;}
   const fl=finalLevelOf(d);
-  box.append(h('div',{class:'small'},'전결권자 ',h('span',{class:'final'},LV[fl]),lvl(baseKey(d))>=fl?(d.kind==='in'?'  · 담당자가 전결권자라 올리면 바로 결재 완료돼요.':'  · 기안자가 전결권자라 올리면 바로 결재 완료돼요.'):''));
+  const cl=clinicLine(d,fl);
+  if(cl)box.append(h('div',{class:'small'},'전결권자 ',h('span',{class:'final'},`${branchById(branchOfKey(baseKey(d))).name} 원장`),`  · 원장 전결 후 사무국장·상무가 협조(확인)해요. (위임전결 기준: ${LV[fl]})`));
+  else box.append(h('div',{class:'small'},'전결권자 ',h('span',{class:'final'},LV[fl]),lvl(baseKey(d))>=fl?(d.kind==='in'?'  · 담당자가 전결권자라 올리면 바로 결재 완료돼요.':'  · 기안자가 전결권자라 올리면 바로 결재 완료돼요.'):''));
   box.append(h('div',{class:'stepRow'},h('span',{class:'lab'},d.kind==='in'?'접수':'기안'),h('span',{},`${nameK(d.author)} · ${R(d.author)?.pos||''}`+(d.kind==='in'&&!d.assignee?' (담당자를 고르면 담당자부터 결재해요)':'')),h('span',{})));
   for(const st of s){
     if(st.dam){box.append(h('div',{class:'stepRow'},h('span',{class:'lab'},'담당'+(st.final?' (전결)':'')),h('span',{},`${nameK(st.key)} · ${R(st.key)?.pos||''} (접수 확인)`),h('span',{})));continue;}
+    if(st.post){box.append(h('div',{class:'stepRow'},h('span',{class:'lab'},'협조(확인)'),h('span',{},`${nameK(st.key)} · ${R(st.key)?.pos||''}`),h('span',{})));continue;}
     if(st.coop){box.append(h('div',{class:'stepRow'},h('span',{class:'lab'},'협조'),h('span',{},`${nameK(st.key)} · ${R(st.key)?.team||''}`),h('button',{type:'button',class:'btn ghost sm',onclick:()=>{d.coop=d.coop.filter(k=>k!==st.key);refresh();}},'빼기')));continue;}
     const sel=h('select',{onchange:e=>{d.stepOverride={...(d.stepOverride||{}),[st.level]:e.target.value};refresh();}},personOpts(st.key,k=>lvl(k)===st.level&&k!==baseKey(d)));
     box.append(h('div',{class:'stepRow'},h('span',{class:'lab'},LV[st.level]+(st.final?' (전결)':'')),sel,h('span',{})));
@@ -1698,8 +1712,8 @@ function docView(d){if(d._locked)return lockedView(d);if(d._lazy){fullDoc(d.id).
     const huBox=canHu?h('label',{class:'row small',style:'gap:6px;align-items:flex-start'},h('input',{type:'checkbox',id:'huChk'}),h('span',{},'긴급: 최종 결재권자의 후결을 받기로 하고 먼저 시행 (제26조③ · 재단에 중대한 영향을 미치는 문서는 안 돼요)')):null;
     const decide=async v=>{if(v==='no'&&!note.value.trim()){m.textContent='반려 사유를 적어 주세요.';m.className='msg err';return;}
       try{const nt=note.value.trim();const huOn=v==='ok'&&canHu&&!!$('huChk')?.checked;if(huOn&&!nt){m.textContent='먼저 시행하는 긴급 사유를 의견에 적어 주세요.';m.className='msg err';return;}await writeDec({[`${d.id}:${e.idx}`]:{v,sig:e.sig,at:Date.now(),as:act==='proxy'?st.key:undefined,hu:huOn||undefined}});if(nt)await patchDoc(d.id,{notes:{...(d.notes||{}),[e.idx]:{note:nt,sig:e.sig}}});mailAfterDecide(d,e,v,huOn,nt);notice(v==='ok'?(st.coop?'협조했어요.':'결재했어요.'):'반려했어요.');setTimeout(()=>notice(''),2500);go('inbox');}catch(er){writeErr(er,m);}};
-    side.append(h('section',{class:'panel acts'},h('h2',{style:'margin:0'},e.hugyeol?'후결 (먼저 시행된 문서)':act==='proxy'?`대결 (${nameK(st.key)} 부재)`:st.coop?'협조':`${LV[st.level]} 결재${st.final?' · 전결':''}`),note,huBox,m,
-      h('div',{class:'row'},h('button',{class:'btn ok',type:'button',disabled:S.readOnly,onclick:()=>decide('ok')},st.coop?'동의':'결재'),h('button',{class:'btn bad',type:'button',disabled:S.readOnly,onclick:()=>decide('no')},st.coop?'이견(반려)':'반려'))));}
+    side.append(h('section',{class:'panel acts'},h('h2',{style:'margin:0'},e.hugyeol?'후결 (먼저 시행된 문서)':act==='proxy'?`대결 (${nameK(st.key)} 부재)`:st.post?'협조 (원장 전결 문서 확인)':st.coop?'협조':`${LV[st.level]} 결재${st.final?' · 전결':''}`),note,huBox,m,
+      h('div',{class:'row'},h('button',{class:'btn ok',type:'button',disabled:S.readOnly,onclick:()=>decide('ok')},st.post?'확인':st.coop?'동의':'결재'),h('button',{class:'btn bad',type:'button',disabled:S.readOnly,onclick:()=>decide('no')},st.coop?'이견(반려)':'반려'))));}
   if(d.kind==='in')side.append(inActions(d));
   if(d.kind==='sms'&&e.status==='approved'&&(isAuthor||S.isAdmin)){const ri=h('textarea',{id:'smsRes',rows:2,placeholder:'예: 11.5 14:00 발송 완료 (1,250건)'},d.result||''),rm=h('div',{class:'msg'});
     side.append(h('section',{class:'panel acts'},h('h2',{style:'margin:0'},'처리결과'),ri,rm,h('button',{class:'btn ghost',type:'button',onclick:async()=>{try{await patchDoc(d.id,{result:ri.value.trim()});rm.textContent='저장했어요.';rm.className='msg good';}catch(er){writeErr(er,rm);}}},'저장')));}
@@ -1727,7 +1741,7 @@ function docView(d){if(d._locked)return lockedView(d);if(d._lazy){fullDoc(d.id).
   const hist=h('div',{class:'hist'});
   for(const l of (d.log||[]))hist.append(h('div',{},`${new Date(l.at).toLocaleDateString('ko-KR')} 다시 올림 (이전: ${STATUS[l.st]||l.st}${l.by?' · '+nameK(l.by):''}${l.note?', 사유: '+l.note:''})`));
   if(e.submitAt)hist.append(h('div',{},`${new Date(e.submitAt).toLocaleString('ko-KR')} ${nameK(d.author)} 올림`));
-  e.done.forEach((x,i)=>{const s=e.steps[i];hist.append(h('div',{},`${new Date(x.at).toLocaleString('ko-KR')} ${nameK(x.by)} ${x.proxy?'대결':''}${s.coop?(x.v==='ok'?'협조 동의':'협조 이견'):(x.v==='ok'?(s.final?'전결':'결재'):'반려')}`,x.note?h('div',{class:'muted'},x.note):null));});
+  e.done.forEach((x,i)=>{const s=e.steps[i];hist.append(h('div',{},`${new Date(x.at).toLocaleString('ko-KR')} ${nameK(x.by)} ${x.proxy?'대결':''}${s.coop?(x.v==='ok'?(s.post?'협조 확인':'협조 동의'):'협조 이견'):(x.v==='ok'?(s.final?'전결':'결재'):'반려')}`,x.note?h('div',{class:'muted'},x.note):null));});
   if(e.status==='withdrawn')hist.append(h('div',{},`${new Date(e.at).toLocaleString('ko-KR')} 회수`));
   if(hist.children.length)side.append(h('section',{class:'panel'},h('h2',{},'처리 이력'),hist));
   // 이관 문서 열람 지정 (관리자)
