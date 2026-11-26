@@ -677,7 +677,7 @@ td.nw{white-space:nowrap;font-variant-numeric:tabular-nums}
   let ev=null;window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();ev=e;const b=document.getElementById('pwaInstall');if(b){b.hidden=false;b.onclick=async()=>{b.hidden=true;try{ev.prompt();await ev.userChoice;}catch(er){}ev=null;};}});
   window.addEventListener('appinstalled',()=>{const b=document.getElementById('pwaInstall');if(b)b.hidden=true;});})();
 /* ================= 프로그램 버전 (고칠 때마다 올림) ================= */
-const APP_VER='2026.11.26 (v70)';
+const APP_VER='2026.11.26 (v71)';
 (function(){const put=()=>{const el=document.getElementById('appVer');if(el)el.textContent='버전 '+APP_VER;};put();document.addEventListener('DOMContentLoaded',put);
   // M365 버전: 서버에 새 버전이 올라왔는지 확인 (열 때 + 30분마다)
   // 새 버전이 올라와 있으면 '업데이트 중' 화면을 보여 주고 자동으로 새 버전을 연다 (작성 중인 글이 있으면 끝날 때까지 기다림)
@@ -1876,26 +1876,34 @@ function viewWeekly(v){
   const nav=h('div',{class:'row'},h('button',{class:'btn ghost sm',onclick:()=>{S.sub.wk=addDays(week,-7);S.wkDirty=false;render(true);}},'‹ 지난주'),h('b',{style:'font-variant-numeric:tabular-nums'},`${dot(week)} 주`),h('button',{class:'btn ghost sm',onclick:()=>{S.sub.wk=addDays(week,7);S.wkDirty=false;render(true);}},'다음주 ›'),week!==mondayOf(TODAY())?h('button',{class:'btn ghost sm',onclick:()=>{S.sub.wk=null;S.wkDirty=false;render(true);}},'이번 주'):null);
   v.append(h('section',{class:'panel'},h('div',{class:'row between',style:'margin-bottom:12px'},h('h2',{style:'margin:0'},'주간업무보고'),nav),
     h('div',{class:'weekgrid'},depts.map(d=>{const y=S.wk[d.id];return h('button',{type:'button',class:'wk'+(y?' done':''),style:'text-align:left;cursor:pointer;font:inherit;color:var(--ink)'+(d.id===sel?';outline:2px solid var(--accent)':''),onclick:()=>{S.sub.wkDept=d.id;S.wkDirty=false;render(true);}},h('b',{},d.name),h('span',{class:'small'},y?`작성 ${(y.writers||[y.writer]).filter(Boolean).map(nameK).join('·')}`:'미작성'));}))));
-  // 저장한 내용이 있으면 먼저 보기로 보여 주고, [일부 수정](그대로 불러와 고치기) / [전체 다시 쓰기](빈 칸에서 새로) 를 고른다
-  const mk=`${week}_${dp.id}`,has=wkHas(x),mode=S.wkMode&&S.wkMode.key===mk?S.wkMode.mode:null,editing=!has||!!mode;
-  if(mode==='full'){st.this='';st.next='';st.memo='';}
-  const setMode=md=>{S.wkMode=md?{key:mk,mode:md}:null;S.wkDirty=false;render(true);};
-  const save=async(data,msgOk)=>{try{await serial('wk',()=>S.db.doc(`wk/${x.id||`${week}_${dp.id}_${String(S.me).replace(/[^A-Za-z0-9_-]/g,'_')}`}`).set({wk:week,dept:dp.id,...data,writer:k,at:Date.now(),t0:x.t0||x.at||Date.now()}));S.wkDirty=false;S.wkMode=null;m.textContent=msgOk;m.className='msg good';setTimeout(()=>render(true),900);}catch(er){writeErr(er,m);}};
-  const view=(lab,val)=>h('div',{class:'f'},h('span',{},lab),h('div',{style:'white-space:pre-wrap;border:1px solid var(--line);border-radius:8px;padding:8px 10px;min-height:120px;background:var(--bg2,#f7f8fa)'},val||h('span',{class:'muted'},'(비어 있음)')));
-  const head=[h('h2',{},`${dp.name} 작성`+(mode==='part'?' · 일부 수정':mode==='full'?' · 전체 다시 쓰기':'')),h('p',{class:'small muted',style:'margin:-6px 0 8px'},'여기에는 내가 쓴 내용만 보여요. 같은 부서 다른 사람 내용은 그대로 두고, 취합본에서 합쳐져요.'+(others.length?` (같은 부서 작성: ${others.map(nameK).join(', ')})`:''))];
-  const info=h('span',{class:'small muted'},x.at?`내 마지막 저장 ${new Date(x.at).toLocaleString('ko-KR')}`:'아직 작성하지 않았어요');
-  const ed=editing
-    ?h('section',{class:'panel'},...head,PII_NOTE(),h('div',{class:'grid'},h('label',{class:'f'},wkThisLabel(week),ta('this')),h('label',{class:'f'},wkNextLabel(week),ta('next')),h('label',{class:'f'},`${dot(addDays(week,5))} (비고)`,ta('memo','담당자·특이사항 등')),
-      h('div',{class:'f s6',style:'flex-direction:row;justify-content:space-between;align-items:center'},info,h('div',{class:'row'},m,
-        has?h('button',{class:'btn ghost',type:'button',onclick:()=>setMode(null)},'취소'):null,
+  // 부서에 저장된 글(사람마다 1건)을 모두 보여 주고, 부서 누구나 [일부 수정]/[전체 다시 쓰기]/[지우기] 할 수 있다. 내 글이 없으면 새로 쓰기 칸.
+  const mk=`${week}_${dp.id}`,ents=(S.wkAll||[]).filter(y=>y.dept===dp.id&&wkHas(y)).sort((p,q)=>(p.t0||p.at||0)-(q.t0||q.at||0));
+  const md=S.wkMode&&S.wkMode.key===mk?S.wkMode:null;
+  const myId=`${week}_${dp.id}_${String(S.me).replace(/[^A-Za-z0-9_-]/g,'_')}`;
+  const setMode=x2=>{S.wkMode=x2?{key:mk,...x2}:null;S.wkDirty=false;render(true);};
+  const save=async(y,data,msgOk,mm)=>{try{const own=!y.id||y.writer===k;await serial('wk',()=>S.db.doc(`wk/${y.id||myId}`).set({wk:week,dept:dp.id,...data,writer:own?k:y.writer,at:Date.now(),t0:y.t0||y.at||Date.now(),...(own?{}:{editor:k})}));S.wkDirty=false;S.wkMode=null;mm.textContent=msgOk;mm.className='msg good';setTimeout(()=>render(true),900);}catch(er){writeErr(er,mm);}};
+  const view=(lab,val)=>h('div',{class:'f'},h('span',{},lab),h('div',{style:'white-space:pre-wrap;border:1px solid var(--line);border-radius:8px;padding:8px 10px;min-height:90px;background:var(--bg2,#f7f8fa)'},val||h('span',{class:'muted'},'(비어 있음)')));
+  const who=y=>`${nameK(y.writer)} 작성`+(y.at?` · 마지막 저장 ${new Date(y.at).toLocaleString('ko-KR')}`:'')+(y.editor&&y.editor!==y.writer?` (${nameK(y.editor)} 수정)`:'');
+  const editor=(y,full)=>{const mm=h('div',{class:'msg'});const s2={this:full?'':(y.this||''),next:full?'':(y.next||''),memo:full?'':(y.memo||'')};
+    const ta2=(f,ph)=>h('textarea',{id:'w_'+f,rows:8,value:s2[f],placeholder:ph||'한 줄에 한 가지씩, 중요한 순서로',oninput:e=>{s2[f]=e.target.value;S.wkDirty=true;}});
+    return h('div',{class:'grid'},h('label',{class:'f'},wkThisLabel(week),ta2('this')),h('label',{class:'f'},wkNextLabel(week),ta2('next')),h('label',{class:'f'},`${dot(addDays(week,5))} (비고)`,ta2('memo','담당자·특이사항 등')),
+      h('div',{class:'f s6',style:'flex-direction:row;justify-content:space-between;align-items:center'},h('span',{class:'small muted'},y.id?who(y):'새로 쓰기'),h('div',{class:'row'},mm,
+        y.id||ents.length?h('button',{class:'btn ghost',type:'button',onclick:()=>setMode(null)},'취소'):null,
         h('button',{class:'btn',type:'button',disabled:S.readOnly||!k,onclick:async()=>{
-          if(!piiGate([['금주 실적',st.this],['다음 주 계획',st.next],['비고',st.memo]],m,st._pii||(st._pii={})))return;
-          await save({this:st.this.trim(),next:st.next.trim(),memo:st.memo.trim()},'저장했어요.');}},'저장')))))
-    :h('section',{class:'panel'},...head,h('div',{class:'grid'},view(wkThisLabel(week),x.this),view(wkNextLabel(week),x.next),view(`${dot(addDays(week,5))} (비고)`,x.memo),
-      h('div',{class:'f s6',style:'flex-direction:row;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px'},info,h('div',{class:'row'},m,
-        armBtn('wkdel'+mk,'내 내용 지우기','정말 지울까요?',()=>save({this:'',next:'',memo:''},'지웠어요.')),
-        h('button',{class:'btn ghost',type:'button',disabled:S.readOnly||!k,onclick:()=>setMode('full')},'전체 다시 쓰기'),
-        h('button',{class:'btn',type:'button',disabled:S.readOnly||!k,onclick:()=>setMode('part')},'일부 수정')))));
+          if(!piiGate([['금주 실적',s2.this],['다음 주 계획',s2.next],['비고',s2.memo]],mm,s2._pii||(s2._pii={})))return;
+          await save(y,{this:s2.this.trim(),next:s2.next.trim(),memo:s2.memo.trim()},'저장했어요.',mm);}},'저장'))));};
+  const card=y=>{if(md&&md.id===y.id)return h('div',{class:'wkent',style:'border-top:1px solid var(--line);padding-top:10px;margin-top:10px'},h('b',{class:'small'},md.mode==='full'?'전체 다시 쓰기':'일부 수정'),editor(y,md.mode==='full'));
+    const mm=h('div',{class:'msg'});
+    return h('div',{class:'wkent',style:'border-top:1px solid var(--line);padding-top:10px;margin-top:10px'},h('div',{class:'grid'},view(wkThisLabel(week),y.this),view(wkNextLabel(week),y.next),view(`${dot(addDays(week,5))} (비고)`,y.memo),
+      h('div',{class:'f s6',style:'flex-direction:row;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px'},h('span',{class:'small muted'},who(y)),h('div',{class:'row'},mm,
+        armBtn('wkdel'+y.id,'지우기','정말 지울까요?',()=>save(y,{this:'',next:'',memo:''},'지웠어요.',mm)),
+        h('button',{class:'btn ghost',type:'button',disabled:S.readOnly||!k,onclick:()=>setMode({id:y.id,mode:'full'})},'전체 다시 쓰기'),
+        h('button',{class:'btn',type:'button',disabled:S.readOnly||!k,onclick:()=>setMode({id:y.id,mode:'part'})},'일부 수정')))));};
+  const mine=ents.some(y=>y.writer===k);
+  const ed=h('section',{class:'panel'},h('h2',{},`${dp.name} 작성`),h('p',{class:'small muted',style:'margin:-6px 0 0'},'부서 사람마다 따로 저장되고 취합본에서 합쳐져요. 부서 누구나 저장된 내용을 고칠 수 있어요.'),PII_NOTE(),
+    ents.map(card),
+    !mine&&(!ents.length||(md&&md.id==='new'))?h('div',{style:ents.length?'border-top:1px solid var(--line);padding-top:10px;margin-top:10px':''},ents.length?h('b',{class:'small'},'내 내용 새로 쓰기'):null,editor({},false))
+    :!mine?h('div',{style:'margin-top:10px'},h('button',{class:'btn ghost',type:'button',disabled:S.readOnly||!k,onclick:()=>setMode({id:'new',mode:'full'})},'+ 내 내용 따로 쓰기')):null);
   v.append(ed);
   const paper=paperWeekly(week);const pm=h('div',{class:'msg'});
   const readers=entriesFor('wk'+week).filter(e=>e.slot==='r').map(e=>keyOfUid(e.uid)).filter(Boolean);
