@@ -677,7 +677,7 @@ td.nw{white-space:nowrap;font-variant-numeric:tabular-nums}
   let ev=null;window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();ev=e;const b=document.getElementById('pwaInstall');if(b){b.hidden=false;b.onclick=async()=>{b.hidden=true;try{ev.prompt();await ev.userChoice;}catch(er){}ev=null;};}});
   window.addEventListener('appinstalled',()=>{const b=document.getElementById('pwaInstall');if(b)b.hidden=true;});})();
 /* ================= 프로그램 버전 (고칠 때마다 올림) ================= */
-const APP_VER='2026.11.26 (v67)';
+const APP_VER='2026.11.26 (v68)';
 (function(){const put=()=>{const el=document.getElementById('appVer');if(el)el.textContent='버전 '+APP_VER;};put();document.addEventListener('DOMContentLoaded',put);
   // M365 버전: 서버에 새 버전이 올라왔는지 확인 (열 때 + 30분마다)
   // 새 버전이 올라와 있으면 '업데이트 중' 화면을 보여 주고 자동으로 새 버전을 연다 (작성 중인 글이 있으면 끝날 때까지 기다림)
@@ -1329,7 +1329,7 @@ function paperBuy(d){
       h('tr',{},h('td',{}),h('td',{class:'c',style:'letter-spacing:1.2em'},'이하여백'),[0,1,2,3,4,5].map(()=>h('td',{}))),
       Array.from({length:blanks},()=>h('tr',{},[0,1,2,3,4,5,6,7].map(()=>h('td',{style:'height:6mm'})))),
       h('tr',{},h('th',{colspan:6},'합 계'),h('td',{class:'r',style:'font-weight:700'},won(total)),h('td',{class:'c'},d.vat==='inc'?'(VAT포함)':'(+VAT)'))),
-    d.vat!=='inc'?h('p',{style:'font-size:9pt;text-align:right;margin:1mm 0 0'},`부가세 포함 ${won(buyTotalVat(d))}원 · 전결 기준 ${LV[buyLevel(buyTotalVat(d),d.goods!==false)]}`):h('p',{style:'font-size:9pt;text-align:right;margin:1mm 0 0'},`전결 기준 ${LV[buyLevel(buyTotalVat(d),d.goods!==false)]}`),
+    d.vat!=='inc'?h('p',{style:'font-size:9pt;text-align:right;margin:1mm 0 0'},`부가세 포함 ${won(buyTotalVat(d))}원`):null,
     h('table',{style:'margin-top:3mm'},h('colgroup',{},h('col',{style:'width:18mm'}),h('col',{})),
       h('tr',{},h('th',{},'주'),h('td',{style:'white-space:pre-wrap'},(d.note?d.note+'\n':'')+(attachText(d)||'')))),
     h('div',{style:'text-align:right;margin-top:8mm;font-size:11pt'},'신청인 :   ',h('b',{style:'letter-spacing:.3em'},nameK(d.author)),'   ',applicantSeal(d)),
