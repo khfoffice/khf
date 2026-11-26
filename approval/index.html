@@ -675,7 +675,7 @@ td.nw{white-space:nowrap;font-variant-numeric:tabular-nums}
   let ev=null;window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();ev=e;const b=document.getElementById('pwaInstall');if(b){b.hidden=false;b.onclick=async()=>{b.hidden=true;try{ev.prompt();await ev.userChoice;}catch(er){}ev=null;};}});
   window.addEventListener('appinstalled',()=>{const b=document.getElementById('pwaInstall');if(b)b.hidden=true;});})();
 /* ================= 프로그램 버전 (고칠 때마다 올림) ================= */
-const APP_VER='2026.11.26 (v63)';
+const APP_VER='2026.11.26 (v64)';
 (function(){const put=()=>{const el=document.getElementById('appVer');if(el)el.textContent='버전 '+APP_VER;};put();document.addEventListener('DOMContentLoaded',put);
   // M365 버전: 서버에 새 버전이 올라왔는지 확인 (열 때 + 30분마다)
   // 새 버전이 올라와 있으면 '업데이트 중' 화면을 보여 주고 자동으로 새 버전을 연다 (작성 중인 글이 있으면 끝날 때까지 기다림)
@@ -2792,6 +2792,7 @@ function acctIn(d,label,cls,ph,after){const lid='acct_'+Math.random().toString(3
   return h('label',{class:cls},label,inp,accs.length?h('datalist',{id:lid},accs.map(a=>h('option',{value:a}))):null,
     accs.length?h('span',{class:'row small',style:'gap:4px;flex-wrap:wrap;margin-top:4px'},h('span',{class:'muted'},'이전 계좌:'),accs.map(a=>h('button',{type:'button',class:'btn ghost sm',style:'padding:2px 8px',onclick:e=>{e.preventDefault();inp.value=a;d.account=a;after&&after();}},a))):null);}
 const areaIn=(d,f,label,cls='f s6',ph='',rows=3)=>h('label',{class:cls},label,h('textarea',{id:'e_'+f,rows,value:d[f]||'',placeholder:ph,oninput:e=>d[f]=e.target.value}));
+function myPrevExtra(d){const yr=Number((d.draftDate||TODAY()).slice(0,4));const a=Object.values(S.docs).filter(x=>x.kind==='subsidy'&&x.id!==d.id&&!x.deleted&&x.author===d.author&&x.stype===d.stype&&Number((x.draftDate||'').slice(0,4))===yr&&Number(x.prevExtra)>0).sort((p,q)=>(q.updatedAt||0)-(p.updatedAt||0));return a.length?Number(a[0].prevExtra):'';}
 function myPrevSubsidy(d){const yr=Number((d.draftDate||TODAY()).slice(0,4));return Object.values(S.docs).filter(x=>x.kind==='subsidy'&&x.id!==d.id&&!x.deleted&&x.author===d.author&&x.stype===d.stype&&Number((x.draftDate||'').slice(0,4))===yr&&ev(x).status==='approved').reduce((a,x)=>a+(Number(x.amount)||0),0);}
 
 /* 행사지원수당: 4시간 이하 6만원 정액, 넘는 1시간마다 1만5천원, 최대 12만원 */
@@ -2829,12 +2830,15 @@ const FORMS={
       h('div',{style:'margin-top:8mm;font-size:9pt'},h('b',{},'<별 첨> 경조금 지급기준'),h('table',{class:'items',style:'margin-top:1.5mm'},h('tr',{},h('th',{},'구 분'),h('th',{colspan:2},'지급 조건 (대상)'),h('th',{},'지급금액')),
         CONDOL.map(c=>h('tr',{},h('td',{class:'c'},c[0]),h('td',{class:'c'},c[1]),h('td',{},c[2]),h('td',{class:'r'},typeof c[3]==='number'?won(c[3]):c[3])))),smallNote('○ 시행일자 : 2026. 2. 1.'))])},
 
-  subsidy:{label:'보조금 지급신청서',short:'보조금',desc:'자녀학비·자기계발·문화생활 보조금',lv:()=>3,sig:['stype','amount','birth','content','usePlace','account','prev'],amount:d=>Number(d.amount)||0,
+  subsidy:{label:'보조금 지급신청서',short:'보조금',desc:'자녀학비·자기계발·문화생활 보조금',lv:()=>3,sig:['stype','amount','birth','content','usePlace','account','prev','prevExtra'],amount:d=>Number(d.amount)||0,
     init:d=>{d.stype='자기계발, 문화생활 보조금';d.amount='';d.birth='';d.content='';d.usePlace='';d.account='';d.attach='영수증 1부.';},
     title:d=>`보조금 지급신청 (${d.stype.split(' ')[0].replace(',','')}) ${nameK(d.author)}`,
     check:d=>!(Number(d.amount)>0)?'신청액을 넣어 주세요.':!d.account?'계좌번호를 넣어 주세요.':null,
-    edit(d,form){const info=h('div',{class:'small'});const upd=()=>{d.prev=myPrevSubsidy(d);const tot=d.prev+(Number(d.amount)||0);const lim=d.stype.startsWith('자기계발')?700000:null;info.replaceChildren(`올해 기신청액 ${won(d.prev)}원 + 추가 신청액 ${won(d.amount)}원 = 합계 ${won(tot)}원`,lim&&tot>lim?h('span',{style:'color:var(--bad);margin-left:6px'},`연 한도 ${won(lim)}원을 넘어요`):'');};
-      form.append(h('div',{class:'f s3'},h('span',{},'보조금 종류'),h('div',{class:'seg'},['자녀학비 보조금','자기계발, 문화생활 보조금'].map(t=>h('button',{type:'button','aria-pressed':d.stype===t?'true':'false',onclick:e=>{d.stype=t;[...e.target.parentNode.children].forEach(b=>b.setAttribute('aria-pressed',b.textContent===t?'true':'false'));upd();}},t)))),
+    edit(d,form){const info=h('div',{class:'small'});if(d.prevExtra==null)d.prevExtra=myPrevExtra(d);
+      const exIn=h('input',{id:'e_prevExtra',type:'number',min:0,value:d.prevExtra||'',placeholder:'0',oninput:e=>{d.prevExtra=e.target.value;upd();}});
+      const upd=()=>{const auto=myPrevSubsidy(d),ex=Number(d.prevExtra)||0;d.prev=auto+ex;const tot=d.prev+(Number(d.amount)||0);const lim=d.stype.startsWith('자기계발')?700000:null;info.replaceChildren(`올해 기신청액 ${won(d.prev)}원${ex?` (전자결재 ${won(auto)}원 + 직접 입력 ${won(ex)}원)`:''} + 추가 신청액 ${won(d.amount)}원 = 합계 ${won(tot)}원`,lim&&tot>lim?h('span',{style:'color:var(--bad);margin-left:6px'},`연 한도 ${won(lim)}원을 넘어요`):'');};
+      form.append(h('div',{class:'f s3'},h('span',{},'보조금 종류'),h('div',{class:'seg'},['자녀학비 보조금','자기계발, 문화생활 보조금'].map(t=>h('button',{type:'button','aria-pressed':d.stype===t?'true':'false',onclick:e=>{d.stype=t;[...e.target.parentNode.children].forEach(b=>b.setAttribute('aria-pressed',b.textContent===t?'true':'false'));const pe=myPrevExtra(d);d.prevExtra=pe;exIn.value=pe||'';upd();}},t)))),
+        h('label',{class:'f s3'},'전자결재 이전 기신청액 (원)',exIn,h('span',{class:'small muted',style:'font-weight:400'},'올해 전자결재 밖(종이 등)으로 이미 받은 금액만 적어요. 전자결재로 낸 건 자동으로 더해져요.')),
         h('label',{class:'f s3'},'신청액 (원)',h('input',{id:'e_amount',type:'number',min:0,value:d.amount||'',oninput:e=>{d.amount=e.target.value;upd();}})),
         h('div',{class:'f s6'},info),
         textIn(d,'content','내용','f s3','예: 업무관련 교육 수강, 도서 구입'),textIn(d,'usePlace','사용처','f s3','예: OO서점'),
@@ -2896,7 +2900,7 @@ const FORMS={
           h('tr',{},h('td',{class:'c'},'지급계좌'),h('td',{},d.account||''),h('td',{},d.holder?'예금주: '+d.holder:''))),
         d.memo?kvTable([['비    고',d.memo]],24):null,signLine(d,'신 청 자')]);}},
   expense:{label:'지출결의서',short:'지출결의',desc:'세금계산서 등 지출 (기관별) · 금액으로 전결 자동',lv:d=>buyLevel(sumBy(d.rows,x=>x.amount),false),sig:['rows','account','memo'],amount:d=>sumBy(d.rows,x=>x.amount),
-    init:d=>{d.rows=[{cat:'',content:'',amount:''}];d.account='';d.memo='';d.attach='세금계산서 1부.';},
+    init:d=>{d.rows=[{cat:'',content:'',amount:''}];d.account='';d.memo='';d.attach='';},
     title:d=>{const r=(d.rows||[]).filter(x=>x.content);return `지출결의 - ${r[0]?.content||'지출'}${r.length>1?` 외 ${r.length-1}건`:''} (${branchById(d.branch).name})`;},
     check:d=>!(d.rows||[]).some(x=>Number(x.amount)>0)?'지출 내용과 금액을 넣어 주세요.':(d.rows||[]).length>10?'지출 항목은 10줄까지 넣을 수 있어요.':null,
     edit(d,form,{refreshSteps}){const tot=h('b',{class:'total'});const upd=()=>{tot.textContent=won(sumBy(d.rows,x=>x.amount))+'원';refreshSteps();};
@@ -2905,6 +2909,7 @@ const FORMS={
         h('div',{class:'f s6',style:'align-items:flex-end'},h('span',{},'소계 ',tot)),
         textIn(d,'account','지급계좌 (은행·계좌번호·예금주)','f s6','예: 국민은행) 519701-01-220702  ㈜하이라인닷넷'),
         areaIn(d,'memo','비고 (선택)','f s6','',2),
+        textIn(d,'attach','첨부 문구 (비우면 첨부파일 이름으로 채워요)','f s6','예: 세금계산서 1부.  거래명세서 1부.'),
         h('p',{class:'muted small f s6',style:'margin:0'},'위 "지점"에서 재단·서울의원·광주의원·부산의원 중 어느 기관 지출인지 골라 주세요. 기관마다 따로 작성해요. 세금계산서는 첨부파일로 올려 주세요.'));
       setTimeout(upd);},
     paper:d=>{const rows=(d.rows||[]).filter(x=>x.cat||x.content||Number(x.amount));return formPaper(d,'지 출 결 의 서',[
