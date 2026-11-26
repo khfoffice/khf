@@ -579,6 +579,8 @@ td.nw{white-space:nowrap;font-variant-numeric:tabular-nums}
 .paper td,.paper th{border:.3mm solid #333;padding:1.4mm 2mm;vertical-align:middle;color:#111;background:#fff;word-break:break-all}
 .paper th{background:#f3f3f3;font-weight:600;text-align:center;white-space:nowrap}
 .paper .c{text-align:center}
+.paper .coops{display:flex;flex-wrap:wrap}
+.paper .sg.cop{width:26mm;height:auto;min-height:15mm;border-right:.3mm solid #333}
 .paper .sg{height:15mm;text-align:center;font-size:9pt;line-height:1.25;padding:1mm}
 .paper .sg b{display:block;font-size:10.5pt;color:#b3261e;font-family:var(--f-doc)}
 .paper .sg img.sig{display:block;max-height:9mm;max-width:92%;margin:.3mm auto;object-fit:contain}
@@ -675,7 +677,7 @@ td.nw{white-space:nowrap;font-variant-numeric:tabular-nums}
   let ev=null;window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();ev=e;const b=document.getElementById('pwaInstall');if(b){b.hidden=false;b.onclick=async()=>{b.hidden=true;try{ev.prompt();await ev.userChoice;}catch(er){}ev=null;};}});
   window.addEventListener('appinstalled',()=>{const b=document.getElementById('pwaInstall');if(b)b.hidden=true;});})();
 /* ================= 프로그램 버전 (고칠 때마다 올림) ================= */
-const APP_VER='2026.11.26 (v66)';
+const APP_VER='2026.11.26 (v67)';
 (function(){const put=()=>{const el=document.getElementById('appVer');if(el)el.textContent='버전 '+APP_VER;};put();document.addEventListener('DOMContentLoaded',put);
   // M365 버전: 서버에 새 버전이 올라왔는지 확인 (열 때 + 30분마다)
   // 새 버전이 올라와 있으면 '업데이트 중' 화면을 보여 주고 자동으로 새 버전을 연다 (작성 중인 글이 있으면 끝날 때까지 기다림)
@@ -1253,7 +1255,10 @@ function signTable(d,label='결 재'){
     h('tr',{},h('th',{rowspan:2,style:'writing-mode:vertical-rl;letter-spacing:.3em'},label),LV.map(t=>h('th',{},t))),h('tr',{},signCells(d)));
 }
 function coopRow(d,span=3){const e=ev(d),co=(e.steps||[]).map((s,i)=>({...s,i})).filter(s=>s.coop);if(!co.length)return null;
-  return h('tr',{},h('th',{},'협 조'),h('td',{colspan:span},co.map(s=>{const x=e.done[s.i];return `${s.post?(R(s.key)?.pos||''):(R(s.key)?.team||'')} ${nameK(s.key)}${x?` (${x.v==='ok'?(s.post?'확인':'동의'):'이견'} ${mmdd(x.at)})`:''}`;}).join(',  ')));}
+  // 협조자마다 칸: 직위(팀) · 도장(서명)+이름 · 날짜. 아직이면 이름만 흐리게
+  const cell=s=>{const x=e.done[s.i],who=s.post?(R(s.key)?.pos||''):(R(s.key)?.team||'');
+    return h('div',{class:'sg cop'},h('small',{},who),x?[...(x.v==='ok'?signOrStamp(x.by):[h('b',{},'이견'),h('span',{class:'apvn'},nameK(x.by))]),h('small',{},`${x.v==='ok'?(s.post?'확인':'동의'):'이견'} ${mmdd(x.at)}`)]:[h('span',{class:'apvn',style:'color:#999;font-weight:400'},nameK(s.key)),h('small',{},e.status==='pending'&&e.idx===s.i?'결재 대기':'')]);};
+  return h('tr',{},h('th',{},'협 조'),h('td',{colspan:span,style:'padding:0'},h('div',{class:'coops'},co.map(cell))));}
 function opinions(d){const e=ev(d),out={};(e.steps||[]).forEach((s,i)=>{const x=e.done[i];if(x&&x.note&&!s.coop)out[s.level]=(out[s.level]?out[s.level]+'\n':'')+x.note;});return out;}
 function attachText(d){const a=(d.attach||'').trim();if(a)return a;const f=d.files||[];return f.length?f.map((x,i)=>`${i+1}. ${x.name.replace(/\.[^.]+$/,'')} 1부.`).join('\n')+'  끝.':'';}
 
